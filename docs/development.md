@@ -18,17 +18,20 @@ the reproducible versioned JAR/JAD release set produced by `just release`.
 
 ## Toolchain
 
-Install `just`, Podman, and Distrobox on the Linux host. The project image
-contains JDK 8, ProGuard, KEmulator, WABT, Rust, Node.js, Python, ShellCheck,
-and formatting tools.
+Install `just` and a `docker` command on the Linux host. Docker Engine works
+directly; Podman users can provide its Docker-compatible command. The project
+image contains JDK 8, ProGuard, KEmulator, WABT, Python, ShellCheck, and
+formatting tools.
 
 ```sh
 just setup
 just doctor
 ```
 
-Project scripts automatically re-enter the `w4me-station` distrobox when
-they need the pinned Java ME toolchain.
+Project scripts automatically start a disposable container from the
+`w4me-station` image when they need the pinned Java ME toolchain. The image is
+built only by `just setup`; command containers use `--rm` and leave generated
+files in the bind-mounted `build/` and `dist/` directories.
 
 ## Common commands
 

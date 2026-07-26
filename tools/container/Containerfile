@@ -1,5 +1,5 @@
 # W4ME Station development environment. Build with:
-#   podman build -t w4me-station tools/container/
+#   docker build -t w4me-station -f tools/container/Containerfile .
 FROM registry.fedoraproject.org/fedora:44
 
 RUN dnf -y install --setopt=install_weak_deps=False \

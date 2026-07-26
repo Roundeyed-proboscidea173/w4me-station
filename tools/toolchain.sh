@@ -6,7 +6,7 @@ ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck disable=SC1091
 source "${ROOT_DIR}/tools/container/env.sh"
 
-printf 'container: %s\n' "${CONTAINER_ID}"
+printf 'container-image: %s\n' "${W4ME_TOOLCHAIN_IMAGE:-w4me-station:latest}"
 java -version
 javac -version
 python3 --version

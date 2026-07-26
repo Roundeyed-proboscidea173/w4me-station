@@ -77,7 +77,8 @@ are documented in [Compatibility](docs/compatibility.md).
 
 ## Requirements
 
-Development requires Linux with `just`, Podman, and Distrobox installed. The
+Development requires Linux with `just` and a `docker` command. Docker Engine
+works directly; Podman users can provide its Docker-compatible command. The
 project toolchain contains JDK 8, ProGuard, KEmulator, WABT, and supporting
 utilities. Version-sensitive components are pinned by the container definition.
 

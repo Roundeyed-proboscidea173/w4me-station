@@ -3,10 +3,9 @@ set shell := ["bash", "-euo", "pipefail", "-c"]
 default:
     @just --list
 
-# Build the project toolchain image and create the project distrobox.
+# Build the project toolchain image. Commands start disposable containers from it.
 setup:
-    podman build -t w4me-station tools/container/
-    distrobox create --name w4me-station --image localhost/w4me-station:latest
+    docker build -t w4me-station -f tools/container/Containerfile .
 
 # Print and validate every required development tool.
 doctor:

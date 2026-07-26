@@ -3,6 +3,9 @@ set -euo pipefail
 
 ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 
+# shellcheck disable=SC1091
+source "${ROOT_DIR}/tools/container/env.sh"
+
 "${ROOT_DIR}/tools/lint.sh"
 "${ROOT_DIR}/tools/test.sh"
 "${ROOT_DIR}/tools/build.sh"

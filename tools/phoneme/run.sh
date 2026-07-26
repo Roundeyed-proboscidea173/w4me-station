@@ -12,7 +12,7 @@ cmd_bench() {
     # is verified during the timed run.
     #
     # This script intentionally does NOT source tools/container/env.sh: the local VM is
-    # a host i686 binary and needs no distrobox. Requirements: javac 8+ on PATH
+    # a host i686 binary and runs directly. Requirements: javac 8+ on PATH
     # and the 32-bit loader (/lib/ld-linux.so.2, glibc.i686, libstdc++.i686).
     #
     # usage: tools/phoneme/run.sh bench [cart ...] [--mode optimized|trace-off|fusion-only|baseline|all]
@@ -762,8 +762,8 @@ cmd_verify_arm64() {
     EXTRA_FRAMES=60
     CARTS=(waternet rubido untangle)
 
-    command -v podman >/dev/null || {
-        printf 'error: podman not found on PATH\n' >&2
+    command -v docker >/dev/null || {
+        printf 'error: docker command not found on PATH\n' >&2
         exit 1
     }
     [ -x "${ARM64_VM}" ] || {
@@ -822,9 +822,9 @@ cmd_verify_arm64() {
         ARM64_RESULT="${OUT_DIR}/${cart}-${MODE}-${CANDIDATE}-arm64-0.txt"
         I686_SIGNATURE="$(deterministic_signature "${I686_RESULT}")"
 
-        if ! podman run --rm --arch arm64 \
-            -v "${PHONEME_HOME}:/vp:ro,z" \
-            -v "${OUT_DIR}/preverified:/pv:ro,z" \
+        if ! docker run --rm --platform linux/arm64 \
+            -v "${PHONEME_HOME}:/vp:ro,Z" \
+            -v "${OUT_DIR}/preverified:/pv:ro,Z" \
             "${ARM64_IMAGE}" \
             /vp/cldc_vm_r-arm64 -EnableTicks =HeapCapacity64M \
             -classpath /vp/classes.zip:/pv \

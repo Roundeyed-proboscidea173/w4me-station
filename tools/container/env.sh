@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
 # Canonical project toolchain environment. Project scripts source this file;
-# when invoked from the host they re-exec themselves inside the distrobox.
+# when invoked from the host they re-exec themselves in the pinned Docker image.
 
-if [ "${CONTAINER_ID:-}" != "w4me-station" ]; then
-    if command -v distrobox >/dev/null 2>&1; then
+if [ "${W4ME_TOOLCHAIN_CONTAINER:-}" != "1" ]; then
+    root_dir="$(readlink -f -- "$(dirname -- "${BASH_SOURCE[0]}")/../..")"
+    if command -v docker >/dev/null 2>&1; then
         script="$(readlink -f -- "$0")"
-        exec distrobox enter w4me-station -- "${script}" "$@"
+        exec "${root_dir}/tools/container/run.sh" exec "${script}" "$@"
     fi
-    printf 'error: run inside the w4me-station distrobox (see tools/container/README.md)\n' >&2
+    printf 'error: docker command not found; see tools/container/README.md\n' >&2
     exit 1
 fi
 

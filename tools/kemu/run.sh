@@ -5,6 +5,10 @@ set -euo pipefail
 ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 FRAMEBUFFER_ORACLE_SOURCE="${ROOT_DIR}/src/test/java/w4me/FramebufferOracle.java"
 
+if [ "${W4ME_TOOLCHAIN_CONTAINER:-}" != "1" ]; then
+    exec "${ROOT_DIR}/tools/container/run.sh" kemu "$@"
+fi
+
 # shellcheck disable=SC1091
 source "${ROOT_DIR}/tools/container/env.sh"
 
@@ -173,88 +177,19 @@ cmd_phone() {
 }
 
 cmd_cpu_quota() {
-    # Run one host-side command while the project container has a temporary cgroup
-    # CPU quota. The exact previous cpu.max value is restored on every exit path.
-
     if [ "$#" -lt 2 ]; then
         printf 'usage: %s PERCENT COMMAND [ARG ...]\n' "$0" >&2
         exit 2
     fi
-    if [ "${CONTAINER_ID:-}" = "w4me-station" ]; then
-        exec distrobox-host-exec env -u CONTAINER_ID "$0" "$@"
-    fi
-
     quota_percent="$1"
     shift
-    quota_period_us="${KEMU_CPU_PERIOD_US:-20000}"
-    container_name="${KEMU_CONTAINER_NAME:-w4me-station}"
-
-    if ! [[ "${quota_percent}" =~ ^[0-9]+$ ]] ||
-        [ "${quota_percent}" -lt 5 ] ||
-        [ "${quota_percent}" -gt 100 ]; then
-        printf 'error: CPU quota percent must be from 5 to 100\n' >&2
-        exit 2
-    fi
-    if ! [[ "${quota_period_us}" =~ ^[0-9]+$ ]] ||
-        [ "${quota_period_us}" -lt 10000 ] ||
-        [ "${quota_period_us}" -gt 1000000 ]; then
-        printf 'error: KEMU_CPU_PERIOD_US must be from 10000 to 1000000\n' >&2
-        exit 2
-    fi
-
-    container_pid="$(podman inspect --format '{{.State.Pid}}' "${container_name}")"
-    if ! [[ "${container_pid}" =~ ^[1-9][0-9]*$ ]]; then
-        printf 'error: project container is not running\n' >&2
+    if [ "${W4ME_KEMU_CPU_PERCENT:-}" != "${quota_percent}" ] ||
+        [ -z "${W4ME_KEMU_CPU_PERIOD_US:-}" ]; then
+        printf 'error: CPU quota must be launched through the host Docker runner\n' >&2
         exit 1
     fi
-    cgroup_path="$(sed -n 's/^0:://p' "/proc/${container_pid}/cgroup")"
-    case "${cgroup_path}" in
-    /user.slice/*/libpod-*.scope/container) ;;
-    *)
-        printf 'error: unexpected project container cgroup: %s\n' "${cgroup_path}" >&2
-        exit 1
-        ;;
-    esac
-    cpu_max="/sys/fs/cgroup${cgroup_path}/cpu.max"
-    if [ ! -w "${cpu_max}" ]; then
-        printf 'error: project container cpu.max is not writable: %s\n' "${cpu_max}" >&2
-        exit 1
-    fi
-
-    original_cpu_max="$(cat -- "${cpu_max}")"
-    quota_us=$((quota_period_us * quota_percent / 100))
-    requested_cpu_max="${quota_us} ${quota_period_us}"
-    restored=0
-
-    restore_cpu_max() {
-        if [ "${restored}" -eq 0 ]; then
-            restored=1
-            printf '%s\n' "${original_cpu_max}" | tee "${cpu_max}" >/dev/null
-            actual_cpu_max="$(cat -- "${cpu_max}")"
-            if [ "${actual_cpu_max}" != "${original_cpu_max}" ]; then
-                printf 'error: failed to restore cpu.max: expected %s, got %s\n' \
-                    "${original_cpu_max}" "${actual_cpu_max}" >&2
-                return 1
-            fi
-        fi
-    }
-    trap restore_cpu_max EXIT
-    trap 'exit 129' HUP
-    trap 'exit 130' INT
-    trap 'exit 143' TERM
-
-    printf '%s\n' "${requested_cpu_max}" | tee "${cpu_max}" >/dev/null
-    actual_cpu_max="$(cat -- "${cpu_max}")"
-    if [ "${actual_cpu_max}" != "${requested_cpu_max}" ]; then
-        printf 'error: failed to apply cpu.max: expected %s, got %s\n' \
-            "${requested_cpu_max}" "${actual_cpu_max}" >&2
-        exit 1
-    fi
-    printf 'CPU_QUOTA_PROFILE container=%s percent=%s period-us=%s original=%s\n' \
-        "${container_name}" "${quota_percent}" "${quota_period_us}" "${original_cpu_max}"
-
-    export W4ME_KEMU_CPU_PERCENT="${quota_percent}"
-    export W4ME_KEMU_CPU_PERIOD_US="${quota_period_us}"
+    printf 'CPU_QUOTA_PROFILE percent=%s period-us=%s engine=docker\n' \
+        "${quota_percent}" "${W4ME_KEMU_CPU_PERIOD_US}"
     "$@"
 }
 

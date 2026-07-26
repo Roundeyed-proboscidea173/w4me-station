@@ -1,22 +1,29 @@
-# WASM-4 for J2ME toolchain distrobox
+# W4ME Station Docker toolchain
 
-The `w4me-station` distrobox is the canonical environment for project
-commands. It pins JDK 8, KEmulator, and supporting tools.
+The `w4me-station` image is the canonical environment for project commands. It
+pins JDK 8, KEmulator, and supporting tools.
 
 ## Setup
 
-Install `just`, Podman, and Distrobox on the Linux host. Then build the image
-and create the box once per machine:
+Install `just` and a `docker` command on the Linux host. Docker Engine works
+directly; Podman users can provide a Docker-compatible `docker` command. Build
+the image once per machine:
 
 ```sh
 just setup
 just doctor
 ```
 
-Project scripts source `tools/container/env.sh`. When launched from the host, they
-automatically re-exec themselves inside the box with a sanitized `PATH`.
-Java ME sources target Java 1.3. Both `J2ME_SOURCE` and `J2ME_TARGET` are
-pinned to `1.3` by `tools/container/env.sh`.
+Project scripts source `tools/container/env.sh`. When launched from the host,
+they automatically re-exec themselves in a disposable `docker run --rm`
+container with a sanitized `PATH`. The repository is bind-mounted at
+`/workspace`, so `build/` and `dist/` remain on the host. Java ME sources target
+Java 1.3. Both `J2ME_SOURCE` and `J2ME_TARGET` are pinned to `1.3` by
+`tools/container/env.sh`.
+
+The runner preserves the host UID for generated files. It uses
+`--userns=keep-id` automatically when the `docker` command is backed by
+rootless Podman.
 
 ## KEmulator
 
@@ -42,6 +49,14 @@ tools/kemu/run.sh session start path/to/application.jar
 tools/kemu/run.sh session cmd tap 80 80
 tools/kemu/run.sh session cmd key FIRE
 tools/kemu/run.sh session stop
+```
+
+`session start` creates the named container `w4me-station-kemu` so Xvfb and
+KEmulator can remain alive between commands. `session stop` removes it. If a
+host interruption leaves the session running, remove it with:
+
+```sh
+docker rm -f w4me-station-kemu
 ```
 
 ## Pinned tools
