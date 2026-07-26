@@ -1,0 +1,97 @@
+# Development
+
+## Repository layout
+
+```text
+src/main/             production Java ME sources and resources
+src/test/             host and MIDP verification harnesses
+cartridges/           bundled upstream WASM-4 cartridges
+testdata/oracles/     immutable exact replay fixtures
+bench/configs/        compile-time interpreter benchmark configurations
+tools/                build, verification, emulator, and benchmark entrypoints
+openspec/             accepted and proposed product changes
+```
+
+Generated classes, emulator state, screenshots, logs, and receipts belong under
+the ignored `build/` directory and are not source artifacts. `dist/` contains
+the reproducible versioned JAR/JAD release set produced by `just release`.
+
+## Toolchain
+
+Install `just`, Podman, and Distrobox on the Linux host. The project image
+contains JDK 8, ProGuard, KEmulator, WABT, Rust, Node.js, Python, ShellCheck,
+and formatting tools.
+
+```sh
+just setup
+just doctor
+```
+
+Project scripts automatically re-enter the `wasm-4-for-j2me` distrobox when
+they need the pinned Java ME toolchain.
+
+## Common commands
+
+```sh
+just build       # build and validate both release JAR variants
+just test        # deterministic host regression suite
+just verify      # test, build, JAR checks, counterless differential
+just run         # open the station in KEmulator
+just bench       # native phoneME corpus benchmark
+just release     # complete release gate and SHA256SUMS
+```
+
+The `justfile` is the stable public interface. Specialized tools use
+subcommands rather than one script per scenario:
+
+```sh
+tools/kemu/run.sh session <start|cmd|stop> [args...]
+tools/kemu/run.sh verify <scenario> [jar]
+tools/kemu/run.sh bench <scenario> [args...]
+tools/phoneme/run.sh <bench|verify|verify-arm64> [args...]
+tools/bench/run.sh <untangle|corpus|fusions>
+tools/verify.sh <jar|counterless> [args...]
+```
+
+All KEmulator and benchmark output is written below `build/reports/`.
+
+## Java ME constraints
+
+- Compile production code with `-source 1.3 -target 1.3`.
+- Keep CLDC code free of Java SE-only APIs.
+- Compile production sources against the checksum-pinned CLDC 1.1 API
+  bootclasspath; do not fall back to the host JDK API.
+- Preserve major version 47 and Java ME `StackMap` attributes.
+- Avoid allocations and helper calls in interpreter hot paths unless measured.
+- Keep `WasmInterpreter.execute` below the bytecode limit enforced by
+  `tools/verify.sh jar`.
+
+The optional phoneME build compiles against its CLDC `classes.zip` as a
+bootclasspath. This is also the strictest available CLDC API lint.
+
+## Test data
+
+`testdata/oracles/` contains only immutable inputs and expected state required
+by automated tests. Do not write new results there. A command that captures a
+receipt, log, or screenshot must write it to `build/reports/`.
+
+Replay routes, expected framebuffer hashes, and benchmark receipt formatting
+belong to test MIDlets under `src/test/`. KEmulator commands inject those
+classes into temporary probe JARs. Release JARs contain the cartridges and
+runtime integrity hashes, but no replay route or expected screen oracle;
+`tools/verify.sh jar` enforces that boundary.
+
+Third-party cartridges must remain byte-identical. Update
+`THIRD_PARTY_NOTICES.md` when the corpus changes.
+
+## Performance changes
+
+Interpreter performance claims require:
+
+1. exact state or replay-oracle equivalence;
+2. a production-shape Java 1.3 artifact;
+3. paired native i686 phoneME measurements;
+4. no material regression on the remaining corpus routes.
+
+KEmulator, HotSpot, and QEMU wall time are not substitutes for the native
+phoneME measurement. See [performance.md](performance.md).

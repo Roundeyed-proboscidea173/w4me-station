@@ -1,0 +1,751 @@
+package w4me;
+
+import java.io.ByteArrayOutputStream;
+import java.io.FileInputStream;
+import java.io.InputStream;
+
+import w4me.runtime.Wasm4Runtime;
+import w4me.wasm.WasmModule;
+
+public final class ArgbBandDifferentialSmoke {
+    private static final int SENTINEL = 0x13579bdf;
+
+    private int cases;
+
+    public static void main(String[] arguments)
+            throws Exception {
+        if (arguments.length != 2) {
+            throw new IllegalArgumentException(
+                    "usage: font cartridge");
+        }
+        ArgbBandDifferentialSmoke smoke =
+                new ArgbBandDifferentialSmoke();
+        smoke.run(read(arguments[0]), read(arguments[1]));
+        System.out.println(
+                "argb-band-differential:pass cases="
+                        + smoke.cases);
+    }
+
+    private void run(byte[] font, byte[] cartridge)
+            throws Exception {
+        WasmModule module = WasmModule.read(cartridge);
+        Wasm4Runtime runtime = new Wasm4Runtime(font);
+        runtime.initialize(module);
+        try {
+            initializeFramebuffer(module.memory());
+            int[] sides = {161, 176, 240, 320};
+            int paletteSeed;
+            for (paletteSeed = 0;
+                    paletteSeed < 2;
+                    paletteSeed++) {
+                initializePalette(
+                        module.memory(), paletteSeed);
+                runtime.prepareArgb(module);
+                verifyCanonicalReference(
+                        runtime, module);
+                int sideIndex;
+                for (sideIndex = 0;
+                        sideIndex < sides.length;
+                        sideIndex++) {
+                    verifyScale(
+                            runtime,
+                            module,
+                            sides[sideIndex]);
+                }
+            }
+            verifyArbitraryMaps(runtime, module);
+            verifyAliases(runtime, module);
+            verifyValidation(runtime, module);
+        } finally {
+            runtime.close();
+            module.close();
+        }
+    }
+
+    private void verifyScale(
+            Wasm4Runtime runtime,
+            WasmModule module,
+            int side) {
+        int[] xMap = createXMap(side);
+        int[] yMap = createYMap(side);
+        int[] heights = {1, 2, 15, 16, 17, side};
+        int heightIndex;
+        for (heightIndex = 0;
+                heightIndex < heights.length;
+                heightIndex++) {
+            verifyFrame(
+                    runtime,
+                    module,
+                    side,
+                    xMap,
+                    yMap,
+                    heights[heightIndex]);
+        }
+
+        verifyBand(
+                runtime,
+                module,
+                side,
+                xMap,
+                yMap,
+                0,
+                0);
+        verifyBand(
+                runtime,
+                module,
+                side,
+                xMap,
+                yMap,
+                0,
+                1);
+        verifyBand(
+                runtime,
+                module,
+                side,
+                xMap,
+                yMap,
+                1,
+                1);
+        verifyBand(
+                runtime,
+                module,
+                side,
+                xMap,
+                yMap,
+                side - 1,
+                1);
+        verifyBand(
+                runtime,
+                module,
+                side,
+                xMap,
+                yMap,
+                side - 3,
+                3);
+    }
+
+    private void verifyFrame(
+            Wasm4Runtime runtime,
+            WasmModule module,
+            int width,
+            int[] xMap,
+            int[] yMap,
+            int bandHeight) {
+        int[] expected = new int[width * yMap.length];
+        int[] actual = new int[expected.length];
+        int[] referenceBand =
+                new int[width * bandHeight + 7];
+        int[] candidateBand =
+                new int[width * bandHeight + 7];
+        int firstRow;
+        for (firstRow = 0;
+                firstRow < yMap.length;
+                firstRow += bandHeight) {
+            int rowCount = yMap.length - firstRow;
+            if (rowCount > bandHeight) {
+                rowCount = bandHeight;
+            }
+            fill(referenceBand, SENTINEL);
+            fill(candidateBand, SENTINEL);
+            runtime.copyArgbBand(
+                    module,
+                    referenceBand,
+                    width,
+                    xMap,
+                    yMap,
+                    firstRow,
+                    rowCount);
+            runtime.copyUpscaledArgbBand(
+                    module,
+                    candidateBand,
+                    width,
+                    xMap,
+                    yMap,
+                    firstRow,
+                    rowCount);
+            assertArray(
+                    referenceBand,
+                    candidateBand,
+                    "band pixels");
+            assertSentinel(
+                    referenceBand,
+                    width * rowCount);
+            assertSentinel(
+                    candidateBand,
+                    width * rowCount);
+            System.arraycopy(
+                    referenceBand,
+                    0,
+                    expected,
+                    firstRow * width,
+                    width * rowCount);
+            System.arraycopy(
+                    candidateBand,
+                    0,
+                    actual,
+                    firstRow * width,
+                    width * rowCount);
+            cases++;
+        }
+        assertArray(expected, actual, "full frame");
+    }
+
+    private void verifyBand(
+            Wasm4Runtime runtime,
+            WasmModule module,
+            int width,
+            int[] xMap,
+            int[] yMap,
+            int firstRow,
+            int rowCount) {
+        int[] expected =
+                new int[width * rowCount + 7];
+        int[] actual =
+                new int[width * rowCount + 7];
+        fill(expected, SENTINEL);
+        fill(actual, SENTINEL);
+        runtime.copyArgbBand(
+                module,
+                expected,
+                width,
+                xMap,
+                yMap,
+                firstRow,
+                rowCount);
+        runtime.copyUpscaledArgbBand(
+                module,
+                actual,
+                width,
+                xMap,
+                yMap,
+                firstRow,
+                rowCount);
+        assertArray(expected, actual, "direct band");
+        assertSentinel(expected, width * rowCount);
+        assertSentinel(actual, width * rowCount);
+        cases++;
+    }
+
+    private void verifyArbitraryMaps(
+            Wasm4Runtime runtime,
+            WasmModule module) {
+        int width = 173;
+        int[] xMap = new int[width];
+        int x;
+        for (x = 0; x < width; x++) {
+            int source = (x * 97 + 31) % Wasm4Runtime.WIDTH;
+            xMap[x] =
+                    (source >> 2)
+                            | ((source & 3) << 8);
+        }
+        int[] yMap = new int[29];
+        int row;
+        for (row = 0; row < yMap.length; row++) {
+            int source = (row * 43 + 7) % Wasm4Runtime.HEIGHT;
+            if (row == 1
+                    || row == 8
+                    || row == 9
+                    || row == 15
+                    || row == yMap.length - 1) {
+                source =
+                        yMap[row - 1]
+                                / (Wasm4Runtime.WIDTH >> 2);
+            }
+            yMap[row] =
+                    source * (Wasm4Runtime.WIDTH >> 2);
+        }
+        verifyFrame(
+                runtime,
+                module,
+                width,
+                xMap,
+                yMap,
+                7);
+        verifyFrame(
+                runtime,
+                module,
+                width,
+                xMap,
+                yMap,
+                16);
+    }
+
+    private void verifyCanonicalReference(
+            Wasm4Runtime runtime,
+            WasmModule module) {
+        int[] sides = {128, 160};
+        int sideIndex;
+        for (sideIndex = 0;
+                sideIndex < sides.length;
+                sideIndex++) {
+            int side = sides[sideIndex];
+            int[] xMap = createXMap(side);
+            int[] yMap = createYMap(side);
+            int[] heights = {1, 16, side};
+            int heightIndex;
+            for (heightIndex = 0;
+                    heightIndex < heights.length;
+                    heightIndex++) {
+                verifyCanonicalFrame(
+                        runtime,
+                        module,
+                        side,
+                        xMap,
+                        yMap,
+                        heights[heightIndex]);
+            }
+        }
+
+        int width = 137;
+        int[] xMap = new int[width];
+        int x;
+        for (x = 0; x < width; x++) {
+            int source =
+                    (x * 97 + 31)
+                            % Wasm4Runtime.WIDTH;
+            xMap[x] =
+                    (source >> 2)
+                            | ((source & 3) << 8);
+        }
+        int[] yMap = new int[29];
+        int row;
+        for (row = 0; row < yMap.length; row++) {
+            int source =
+                    (row * 43 + 7)
+                            % Wasm4Runtime.HEIGHT;
+            if (row == 1
+                    || row == 8
+                    || row == 9
+                    || row == 15
+                    || row == yMap.length - 1) {
+                source =
+                        yMap[row - 1]
+                                / (Wasm4Runtime.WIDTH >> 2);
+            }
+            yMap[row] =
+                    source
+                            * (Wasm4Runtime.WIDTH >> 2);
+        }
+        verifyCanonicalFrame(
+                runtime,
+                module,
+                width,
+                xMap,
+                yMap,
+                7);
+        verifyCanonicalAliases(runtime, module);
+    }
+
+    private void verifyCanonicalFrame(
+            Wasm4Runtime runtime,
+            WasmModule module,
+            int width,
+            int[] xMap,
+            int[] yMap,
+            int bandHeight) {
+        int[] expected =
+                new int[width * bandHeight + 7];
+        int[] actual =
+                new int[expected.length];
+        int firstRow;
+        for (firstRow = 0;
+                firstRow < yMap.length;
+                firstRow += bandHeight) {
+            int rowCount = yMap.length - firstRow;
+            if (rowCount > bandHeight) {
+                rowCount = bandHeight;
+            }
+            fill(expected, SENTINEL);
+            fill(actual, SENTINEL);
+            referenceArgbBand(
+                    module.memory(),
+                    expected,
+                    width,
+                    xMap,
+                    yMap,
+                    firstRow,
+                    rowCount);
+            runtime.copyArgbBand(
+                    module,
+                    actual,
+                    width,
+                    xMap,
+                    yMap,
+                    firstRow,
+                    rowCount);
+            assertArray(
+                    expected,
+                    actual,
+                    "canonical reference");
+            assertSentinel(
+                    expected, width * rowCount);
+            assertSentinel(
+                    actual, width * rowCount);
+            cases++;
+        }
+    }
+
+    private void verifyCanonicalAliases(
+            Wasm4Runtime runtime,
+            WasmModule module) {
+        int width = 160;
+        int[] expectedX = createXMap(width);
+        int[] actualX = copy(expectedX);
+        int[] expectedY = createYMap(width);
+        int[] actualY = copy(expectedY);
+        referenceArgbBand(
+                module.memory(),
+                expectedX,
+                width,
+                expectedX,
+                expectedY,
+                0,
+                1);
+        runtime.copyArgbBand(
+                module,
+                actualX,
+                width,
+                actualX,
+                actualY,
+                0,
+                1);
+        assertArray(
+                expectedX,
+                actualX,
+                "canonical xMap alias");
+        cases++;
+
+        int[] xMap = createXMap(width);
+        expectedY = createYMap(width);
+        actualY = copy(expectedY);
+        referenceArgbBand(
+                module.memory(),
+                expectedY,
+                width,
+                xMap,
+                expectedY,
+                0,
+                1);
+        runtime.copyArgbBand(
+                module,
+                actualY,
+                width,
+                xMap,
+                actualY,
+                0,
+                1);
+        assertArray(
+                expectedY,
+                actualY,
+                "canonical yMap alias");
+        cases++;
+    }
+
+    private static void referenceArgbBand(
+            byte[] memory,
+            int[] pixels,
+            int width,
+            int[] xMap,
+            int[] yMap,
+            int firstRow,
+            int rowCount) {
+        int row;
+        for (row = 0; row < rowCount; row++) {
+            int sourceRow = yMap[firstRow + row];
+            int destinationRow = row * width;
+            int x;
+            for (x = 0; x < width; x++) {
+                int mapping = xMap[x];
+                int packed =
+                        memory[Wasm4Runtime.FRAMEBUFFER
+                                        + sourceRow
+                                        + (mapping & 0xff)]
+                                & 0xff;
+                int lane = mapping >>> 8;
+                int color =
+                        (packed >>> (lane << 1)) & 3;
+                pixels[destinationRow + x] =
+                        0xff000000
+                                | (readI32(
+                                                        memory,
+                                                        Wasm4Runtime.PALETTE
+                                                                + color * 4)
+                                                & 0x00ffffff);
+            }
+        }
+    }
+
+    private static int readI32(
+            byte[] memory, int address) {
+        return (memory[address] & 0xff)
+                | ((memory[address + 1] & 0xff) << 8)
+                | ((memory[address + 2] & 0xff) << 16)
+                | ((memory[address + 3] & 0xff) << 24);
+    }
+
+    private void verifyAliases(
+            Wasm4Runtime runtime,
+            WasmModule module) {
+        int width = 161;
+        int[] expectedX = createXMap(width);
+        int[] actualX = copy(expectedX);
+        int[] expectedY = createYMap(width);
+        int[] actualY = copy(expectedY);
+        runtime.copyArgbBand(
+                module,
+                expectedX,
+                width,
+                expectedX,
+                expectedY,
+                0,
+                1);
+        runtime.copyUpscaledArgbBand(
+                module,
+                actualX,
+                width,
+                actualX,
+                actualY,
+                0,
+                1);
+        assertArray(expectedX, actualX, "xMap alias");
+        cases++;
+
+        int[] xMap = createXMap(width);
+        expectedY = createYMap(width);
+        actualY = copy(expectedY);
+        runtime.copyArgbBand(
+                module,
+                expectedY,
+                width,
+                xMap,
+                expectedY,
+                0,
+                1);
+        runtime.copyUpscaledArgbBand(
+                module,
+                actualY,
+                width,
+                xMap,
+                actualY,
+                0,
+                1);
+        assertArray(expectedY, actualY, "yMap alias");
+        cases++;
+    }
+
+    private void verifyValidation(
+            Wasm4Runtime runtime,
+            WasmModule module) {
+        expectIllegalArgument(
+                runtime,
+                module,
+                160,
+                new int[160],
+                new int[160],
+                new int[160],
+                0,
+                1);
+        expectIllegalArgument(
+                runtime,
+                module,
+                161,
+                new int[161],
+                new int[161],
+                new int[161],
+                0,
+                -1);
+        expectIllegalArgument(
+                runtime,
+                module,
+                161,
+                new int[161],
+                new int[160],
+                new int[161],
+                0,
+                1);
+        expectIllegalArgument(
+                runtime,
+                module,
+                161,
+                new int[161],
+                new int[161],
+                new int[161],
+                -1,
+                1);
+        expectIllegalArgument(
+                runtime,
+                module,
+                161,
+                new int[322],
+                new int[161],
+                new int[1],
+                0,
+                2);
+        expectIllegalArgument(
+                runtime,
+                module,
+                161,
+                new int[321],
+                new int[161],
+                new int[2],
+                0,
+                2);
+    }
+
+    private void expectIllegalArgument(
+            Wasm4Runtime runtime,
+            WasmModule module,
+            int width,
+            int[] pixels,
+            int[] xMap,
+            int[] yMap,
+            int firstRow,
+            int rowCount) {
+        try {
+            runtime.copyUpscaledArgbBand(
+                    module,
+                    pixels,
+                    width,
+                    xMap,
+                    yMap,
+                    firstRow,
+                    rowCount);
+            throw new AssertionError(
+                    "expected IllegalArgumentException");
+        } catch (IllegalArgumentException expected) {
+            cases++;
+        }
+    }
+
+    private static int[] createXMap(int width) {
+        int[] result = new int[width];
+        int x;
+        for (x = 0; x < width; x++) {
+            int source =
+                    x * Wasm4Runtime.WIDTH / width;
+            result[x] =
+                    (source >> 2)
+                            | ((source & 3) << 8);
+        }
+        return result;
+    }
+
+    private static int[] createYMap(int height) {
+        int[] result = new int[height];
+        int y;
+        for (y = 0; y < height; y++) {
+            int source =
+                    y * Wasm4Runtime.HEIGHT / height;
+            result[y] =
+                    source * (Wasm4Runtime.WIDTH >> 2);
+        }
+        return result;
+    }
+
+    private static void initializePalette(
+            byte[] memory, int seed) {
+        int[] colors =
+                seed == 0
+                        ? new int[] {
+                            0x071821,
+                            0x306850,
+                            0x86c06c,
+                            0xe0f8cf
+                        }
+                        : new int[] {
+                            0x040404,
+                            0x574248,
+                            0xd6b97b,
+                            0xfff4d2
+                        };
+        int index;
+        for (index = 0; index < colors.length; index++) {
+            int address =
+                    Wasm4Runtime.PALETTE + index * 4;
+            int color = colors[index];
+            memory[address] = (byte) color;
+            memory[address + 1] =
+                    (byte) (color >>> 8);
+            memory[address + 2] =
+                    (byte) (color >>> 16);
+            memory[address + 3] =
+                    (byte) (color >>> 24);
+        }
+    }
+
+    private static void initializeFramebuffer(
+            byte[] memory) {
+        int index;
+        for (index = 0;
+                index < Wasm4Runtime.FRAMEBUFFER_SIZE;
+                index++) {
+            memory[Wasm4Runtime.FRAMEBUFFER + index] =
+                    (byte) (index * 73 + (index >>> 2));
+        }
+    }
+
+    private static int[] copy(int[] source) {
+        int[] result = new int[source.length];
+        System.arraycopy(
+                source, 0, result, 0, source.length);
+        return result;
+    }
+
+    private static void fill(int[] values, int value) {
+        int index;
+        for (index = 0; index < values.length; index++) {
+            values[index] = value;
+        }
+    }
+
+    private static void assertSentinel(
+            int[] values, int first) {
+        int index;
+        for (index = first; index < values.length; index++) {
+            if (values[index] != SENTINEL) {
+                throw new AssertionError(
+                        "tail overwritten at " + index);
+            }
+        }
+    }
+
+    private static void assertArray(
+            int[] expected,
+            int[] actual,
+            String label) {
+        if (expected.length != actual.length) {
+            throw new AssertionError(
+                    label + " length mismatch");
+        }
+        int index;
+        for (index = 0; index < expected.length; index++) {
+            if (expected[index] != actual[index]) {
+                throw new AssertionError(
+                        label
+                                + " mismatch at "
+                                + index
+                                + ": "
+                                + expected[index]
+                                + " != "
+                                + actual[index]);
+            }
+        }
+    }
+
+    private static byte[] read(String path)
+            throws Exception {
+        InputStream input = new FileInputStream(path);
+        try {
+            ByteArrayOutputStream output =
+                    new ByteArrayOutputStream();
+            byte[] buffer = new byte[4096];
+            int count;
+            while ((count = input.read(buffer)) >= 0) {
+                output.write(buffer, 0, count);
+            }
+            return output.toByteArray();
+        } finally {
+            input.close();
+        }
+    }
+}

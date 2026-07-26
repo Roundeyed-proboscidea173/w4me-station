@@ -1,0 +1,91 @@
+name: Bug report
+description: Report a problem on a Java ME handset or emulator
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not include private data, credentials, or copyrighted cartridge files.
+
+  - type: input
+    id: phone
+    attributes:
+      label: Phone or emulator
+      description: Exact handset model or emulator name and version
+      placeholder: Nokia E71
+    validations:
+      required: true
+
+  - type: input
+    id: firmware
+    attributes:
+      label: Firmware or platform version
+      description: Firmware, Java platform, or emulator profile if known
+      placeholder: S60 3rd Edition FP1, firmware ...
+
+  - type: dropdown
+    id: build
+    attributes:
+      label: Build variant
+      options:
+        - Full JSR-75 build
+        - Base build
+        - Self-built
+        - Unknown
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: W4ME Station version or commit
+      placeholder: 1.0.0
+    validations:
+      required: true
+
+  - type: input
+    id: cartridge
+    attributes:
+      label: Cartridge
+      description: Bundled title or upstream page for an external cartridge
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Include the controls used and whether the problem survives a MIDlet restart
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: Include any visible error text and whether sound, input, storage, or rendering is affected
+    validations:
+      required: true
+
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Additional evidence
+      description: Screenshots, short video, logs, and whether the same JAR behaves differently in another VM
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: I used a matching JAD/JAR pair from the same release.
+          required: true
+        - label: I have not attached private data or credentials.
+          required: true

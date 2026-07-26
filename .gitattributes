@@ -1,0 +1,12 @@
+* text=auto eol=lf
+
+*.jar binary
+*.jpg binary
+*.png binary
+*.wasm binary
+*.zip binary
+
+.claude export-ignore
+.codex export-ignore
+.agents export-ignore
+openspec export-ignore

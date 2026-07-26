@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build project toolchain
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: tools/container/Containerfile
+          load: true
+          tags: w4me-toolchain:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Test and build release artifacts
+        run: |
+          docker run --rm \
+            -e CONTAINER_ID=wasm-4-for-j2me \
+            -v "$PWD:/workspace" \
+            -w /workspace \
+            w4me-toolchain:ci \
+            bash -lc 'just release'
+
+      - name: Verify checked-in release artifacts
+        run: git diff --exit-code -- dist

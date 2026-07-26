@@ -1,0 +1,9 @@
+sample,baseline_us_per_frame,candidate_us_per_frame,frames,order
+0,117720,115193,129,baseline-first
+1,116519,116751,129,candidate-first
+2,116302,116581,129,baseline-first
+3,116248,116542,129,candidate-first
+4,116379,117108,129,baseline-first
+5,116720,116457,129,candidate-first
+6,116674,117620,129,baseline-first
+7,116798,116131,129,candidate-first

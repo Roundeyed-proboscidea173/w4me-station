@@ -1,0 +1,107 @@
+# W4ME Station development environment. Build with:
+#   podman build -t wasm-4-for-j2me tools/container/
+FROM registry.fedoraproject.org/fedora:44
+
+RUN dnf -y install --setopt=install_weak_deps=False \
+    gcc gcc-c++ make git findutils which file tar xz zip unzip wabt \
+    nodejs npm \
+    python3 \
+    just \
+    ShellCheck shfmt \
+    pkgconf-pkg-config \
+    && dnf clean all
+
+# Native build dependencies plus the virtual display used by KEmulator.
+RUN dnf -y install --setopt=install_weak_deps=False \
+    libX11-devel libXi-devel mesa-libGL-devel alsa-lib-devel \
+    libxkbcommon libxkbcommon-x11 \
+    xorg-x11-server-Xvfb mesa-dri-drivers \
+    && dnf clean all
+
+# KEmulator uses SWT/GTK3 and AWT; fonts keep headless screenshots stable.
+RUN dnf -y install --setopt=install_weak_deps=False \
+    gtk3 libXrender libXtst dejavu-sans-fonts \
+    && dnf clean all
+
+# Audio conversion tools for J2ME MIDI/audio work.
+RUN dnf -y install --setopt=install_weak_deps=False \
+    fluidsynth-2.5.4 \
+    vorbis-tools-1.4.3 \
+    musescore-soundfont-0.2.0 \
+    && dnf clean all
+
+RUN npm install -g @taplo/cli@0.7.0
+
+# Temurin JDK 8, pinned to an exact release and verified checksum. JDK 8 is
+# used both for legacy-compatible Java builds and KEmulator.
+ENV JAVA_HOME=/opt/jdk8
+ENV JDK8_HOME=/opt/jdk8
+RUN jdk8_url='https://github.com/adoptium/temurin8-binaries/releases/download/jdk8u492-b09/OpenJDK8U-jdk_x64_linux_hotspot_8u492b09.tar.gz' \
+    && jdk8_sha256='da257f161d7f8c6ca5b0e5d9e4090f65ac28c5e398072e68b8ae87988b1d1a2e' \
+    && curl -Ls "${jdk8_url}" -o /tmp/jdk8.tar.gz \
+    && echo "${jdk8_sha256}  /tmp/jdk8.tar.gz" | sha256sum -c - \
+    && mkdir -p /opt/jdk8 \
+    && tar -xzf /tmp/jdk8.tar.gz -C /opt/jdk8 --strip-components=1 \
+    && rm /tmp/jdk8.tar.gz \
+    && chmod -R a+rX /opt/jdk8
+
+# ProGuard adds the Java ME StackMap attributes required by real CLDC VMs.
+ENV PROGUARD_HOME=/opt/proguard
+RUN proguard_url='https://github.com/Guardsquare/proguard/releases/download/v7.0.1/proguard-7.0.1.zip' \
+    && proguard_sha256='dd9a844389eb8cf421e4580713d0608e9cc10f5a0ac6f9e3f6c44154cd53dbc0' \
+    && curl -Ls "${proguard_url}" -o /tmp/proguard.zip \
+    && echo "${proguard_sha256}  /tmp/proguard.zip" | sha256sum -c - \
+    && unzip -q /tmp/proguard.zip -d /opt \
+    && ln -s /opt/proguard-7.0.1 /opt/proguard \
+    && rm /tmp/proguard.zip \
+    && chmod -R a+rX /opt/proguard-7.0.1
+
+# MicroEmulator's CLDC 1.1 API stubs provide the strict javac bootclasspath.
+# They prevent production sources from resolving Java SE APIs that old phones
+# do not implement. The LGPL stub JARs are build-time-only and never packaged.
+ENV CLDC_API_JAR=/opt/j2me-api/cldcapi11-2.0.4.jar
+ENV MIDP_API_STUB_JAR=/opt/j2me-api/midpapi20-2.0.4.jar
+RUN cldc_api_url='https://repo.maven.apache.org/maven2/org/microemu/cldcapi11/2.0.4/cldcapi11-2.0.4.jar' \
+    && cldc_api_sha256='f86f41bfb4097e4bd9cdfeca528960f6977cbda0f5785342adef9909a6a3baef' \
+    && midp_api_url='https://repo.maven.apache.org/maven2/org/microemu/midpapi20/2.0.4/midpapi20-2.0.4.jar' \
+    && midp_api_sha256='b7f6ed5e0344c7000643ecc114e6edff3587e8e77face546af0e12ffd6dbe826' \
+    && mkdir -p /opt/j2me-api \
+    && curl -Ls "${cldc_api_url}" -o "${CLDC_API_JAR}" \
+    && curl -Ls "${midp_api_url}" -o "${MIDP_API_STUB_JAR}" \
+    && echo "${cldc_api_sha256}  ${CLDC_API_JAR}" | sha256sum -c - \
+    && echo "${midp_api_sha256}  ${MIDP_API_STUB_JAR}" | sha256sum -c - \
+    && chmod a+r "${CLDC_API_JAR}" "${MIDP_API_STUB_JAR}"
+
+# KEmulator automation CLI pinned to an exact revision. The bundle includes
+# KEmulator.jar, MIDP APIs, and kemu.sh.
+ENV KEMU_HOME=/opt/kemu
+RUN kemu_commit='73ba4b14b8c2' \
+    && git clone --filter=blob:none 'https://github.com/mulfyx/KEmulator.git' /tmp/kemu-src \
+    && git -C /tmp/kemu-src checkout "${kemu_commit}" \
+    && cd /tmp/kemu-src \
+    && JAVA_HOME=/opt/jdk8 PATH="/opt/jdk8/bin:$PATH" ./build-release.sh /opt/kemu \
+    && rm -rf /tmp/kemu-src \
+    && chmod -R a+rX /opt/kemu
+
+# Rust is retained from the source environment for WASM-4 runtime/reference
+# tooling and cartridge builds, including the bare wasm32 target.
+ENV RUSTUP_HOME=/opt/rust/rustup
+RUN curl -Ls 'https://sh.rustup.rs' -o /tmp/rustup.sh \
+    && CARGO_HOME=/opt/rust/cargo sh /tmp/rustup.sh -y --no-modify-path --profile minimal \
+        --default-toolchain 1.96.0 --component rustfmt --component clippy \
+    && rm /tmp/rustup.sh \
+    && CARGO_HOME=/opt/rust/cargo RUSTUP_HOME=/opt/rust/rustup \
+        /opt/rust/cargo/bin/rustup target add wasm32-unknown-unknown \
+    && chmod -R a+rX /opt/rust
+ENV PATH=/opt/rust/cargo/bin:/opt/jdk8/bin:/opt/proguard/bin:$PATH
+
+RUN printf '%s\n' \
+    'export RUSTUP_HOME=/opt/rust/rustup' \
+    'export JAVA_HOME=/opt/jdk8' \
+    'export JDK8_HOME=/opt/jdk8' \
+    'export KEMU_HOME=/opt/kemu' \
+    'export PROGUARD_HOME=/opt/proguard' \
+    'export CLDC_API_JAR=/opt/j2me-api/cldcapi11-2.0.4.jar' \
+    'export MIDP_API_STUB_JAR=/opt/j2me-api/midpapi20-2.0.4.jar' \
+    'export PATH=/opt/rust/cargo/bin:/opt/jdk8/bin:/opt/proguard/bin:$PATH' \
+    > /etc/profile.d/wasm-4-for-j2me-toolchain.sh

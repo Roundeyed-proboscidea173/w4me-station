@@ -1,0 +1,1304 @@
+package w4me.runtime;
+
+import w4me.wasm.WasmHost;
+import w4me.wasm.WasmModule;
+import w4me.wasm.WasmTrap;
+import w4me.runtime.audio.SilentAudioBackend;
+import w4me.runtime.audio.Wasm4Apu;
+import w4me.runtime.storage.DiskBackend;
+import w4me.runtime.storage.MemoryDiskBackend;
+
+public final class Wasm4Runtime implements WasmHost {
+    public static final int WIDTH = 160;
+    public static final int HEIGHT = 160;
+    public static final int PALETTE = 0x04;
+    public static final int DRAW_COLORS = 0x14;
+    public static final int GAMEPAD1 = 0x16;
+    public static final int GAMEPAD2 = 0x17;
+    public static final int GAMEPAD3 = 0x18;
+    public static final int GAMEPAD4 = 0x19;
+    public static final int MOUSE_X = 0x1a;
+    public static final int MOUSE_Y = 0x1c;
+    public static final int MOUSE_BUTTONS = 0x1e;
+    public static final int SYSTEM_FLAGS = 0x1f;
+    public static final int FRAMEBUFFER = 0x00a0;
+    public static final int FRAMEBUFFER_SIZE = 6400;
+    private static final int TRACE_OUTPUT_LIMIT = 4096;
+    private static final int LINE_STEP_LIMIT = 4096;
+    private static final int OVAL_DIMENSION_LIMIT = 512;
+
+    private final byte[] font;
+    private final int[] palette = new int[4];
+    private final int[] argbLookup = new int[1024];
+    private final Wasm4Apu apu;
+    private final DiskBackend disk;
+    private String lastTrace;
+
+    public Wasm4Runtime(byte[] font) {
+        this(
+                font,
+                new Wasm4Apu(new SilentAudioBackend()),
+                new MemoryDiskBackend());
+    }
+
+    public Wasm4Runtime(byte[] font, Wasm4Apu apu) {
+        this(font, apu, new MemoryDiskBackend());
+    }
+
+    public Wasm4Runtime(byte[] font, Wasm4Apu apu, DiskBackend disk) {
+        if (font == null || font.length != 1792) {
+            throw new IllegalArgumentException("WASM-4 font must contain exactly 1792 bytes");
+        }
+        if (apu == null) {
+            throw new IllegalArgumentException("WASM-4 APU is required");
+        }
+        if (disk == null) {
+            throw new IllegalArgumentException("WASM-4 disk is required");
+        }
+        this.font = font;
+        this.apu = apu;
+        this.disk = disk;
+    }
+
+    public void initialize(WasmModule module) {
+        byte[] memory = module.memory();
+        writeI32(memory, PALETTE, 0xe0f8cf);
+        writeI32(memory, PALETTE + 4, 0x86c06c);
+        writeI32(memory, PALETTE + 8, 0x306850);
+        writeI32(memory, PALETTE + 12, 0x071821);
+        writeI16(memory, DRAW_COLORS, 0x1203);
+        writeI16(memory, MOUSE_X, 0x7fff);
+        writeI16(memory, MOUSE_Y, 0x7fff);
+    }
+
+    public void beginFrame(
+            WasmModule module, int gamepad, int mouseX, int mouseY, int mouseButtons) {
+        beginFrame(module, gamepad, 0, mouseX, mouseY, mouseButtons);
+    }
+
+    public void beginFrame(
+            WasmModule module,
+            int gamepad1,
+            int gamepad2,
+            int mouseX,
+            int mouseY,
+            int mouseButtons) {
+        byte[] memory = module.memory();
+        if ((memory[SYSTEM_FLAGS] & 1) == 0) {
+            memory[FRAMEBUFFER] = 0;
+            int cleared = 1;
+            while (cleared < FRAMEBUFFER_SIZE) {
+                int copyLength = cleared;
+                if (copyLength > FRAMEBUFFER_SIZE - cleared) {
+                    copyLength = FRAMEBUFFER_SIZE - cleared;
+                }
+                System.arraycopy(
+                        memory,
+                        FRAMEBUFFER,
+                        memory,
+                        FRAMEBUFFER + cleared,
+                        copyLength);
+                cleared += copyLength;
+            }
+        }
+        memory[GAMEPAD1] = (byte) gamepad1;
+        memory[GAMEPAD2] = (byte) gamepad2;
+        memory[GAMEPAD3] = 0;
+        memory[GAMEPAD4] = 0;
+        writeI16(memory, MOUSE_X, mouseX);
+        writeI16(memory, MOUSE_Y, mouseY);
+        memory[MOUSE_BUTTONS] = (byte) mouseButtons;
+    }
+
+    public long invoke(
+            int importId,
+            long[] valueStack,
+            int argumentBase,
+            int argumentCount,
+            WasmModule module) {
+        byte[] memory = module.memory();
+        switch (importId) {
+            case WasmHost.IMPORT_TEXT_UTF8:
+                textUtf8(
+                        memory,
+                        (int) valueStack[argumentBase],
+                        (int) valueStack[argumentBase + 1],
+                        (int) valueStack[argumentBase + 2],
+                        (int) valueStack[argumentBase + 3]);
+                return 0;
+            case WasmHost.IMPORT_TEXT:
+                text(
+                        memory,
+                        (int) valueStack[argumentBase],
+                        (int) valueStack[argumentBase + 1],
+                        (int) valueStack[argumentBase + 2]);
+                return 0;
+            case WasmHost.IMPORT_TEXT_UTF16:
+                textUtf16(
+                        memory,
+                        (int) valueStack[argumentBase],
+                        (int) valueStack[argumentBase + 1],
+                        (int) valueStack[argumentBase + 2],
+                        (int) valueStack[argumentBase + 3]);
+                return 0;
+            case WasmHost.IMPORT_RECT:
+                rect(
+                        memory,
+                        (int) valueStack[argumentBase],
+                        (int) valueStack[argumentBase + 1],
+                        (int) valueStack[argumentBase + 2],
+                        (int) valueStack[argumentBase + 3]);
+                return 0;
+            case WasmHost.IMPORT_BLIT:
+                blit(
+                        memory,
+                        (int) valueStack[argumentBase],
+                        (int) valueStack[argumentBase + 1],
+                        (int) valueStack[argumentBase + 2],
+                        (int) valueStack[argumentBase + 3],
+                        (int) valueStack[argumentBase + 4],
+                        (int) valueStack[argumentBase + 5]);
+                return 0;
+            case WasmHost.IMPORT_BLIT_SUB:
+                blitSub(
+                        memory,
+                        (int) valueStack[argumentBase],
+                        (int) valueStack[argumentBase + 1],
+                        (int) valueStack[argumentBase + 2],
+                        (int) valueStack[argumentBase + 3],
+                        (int) valueStack[argumentBase + 4],
+                        (int) valueStack[argumentBase + 5],
+                        (int) valueStack[argumentBase + 6],
+                        (int) valueStack[argumentBase + 7],
+                        (int) valueStack[argumentBase + 8]);
+                return 0;
+            case WasmHost.IMPORT_LINE:
+                line(
+                        memory,
+                        (int) valueStack[argumentBase],
+                        (int) valueStack[argumentBase + 1],
+                        (int) valueStack[argumentBase + 2],
+                        (int) valueStack[argumentBase + 3]);
+                return 0;
+            case WasmHost.IMPORT_HLINE:
+                hline(
+                        memory,
+                        (int) valueStack[argumentBase],
+                        (int) valueStack[argumentBase + 1],
+                        (int) valueStack[argumentBase + 2]);
+                return 0;
+            case WasmHost.IMPORT_VLINE:
+                vline(
+                        memory,
+                        (int) valueStack[argumentBase],
+                        (int) valueStack[argumentBase + 1],
+                        (int) valueStack[argumentBase + 2]);
+                return 0;
+            case WasmHost.IMPORT_OVAL:
+                oval(
+                        memory,
+                        (int) valueStack[argumentBase],
+                        (int) valueStack[argumentBase + 1],
+                        (int) valueStack[argumentBase + 2],
+                        (int) valueStack[argumentBase + 3]);
+                return 0;
+            case WasmHost.IMPORT_DISK_READ:
+                return diskRead(
+                        memory,
+                        (int) valueStack[argumentBase],
+                        (int) valueStack[argumentBase + 1]);
+            case WasmHost.IMPORT_DISK_WRITE:
+                return diskWrite(
+                        memory,
+                        (int) valueStack[argumentBase],
+                        (int) valueStack[argumentBase + 1]);
+            case WasmHost.IMPORT_TONE:
+                apu.tone(
+                        (int) valueStack[argumentBase],
+                        (int) valueStack[argumentBase + 1],
+                        (int) valueStack[argumentBase + 2],
+                        (int) valueStack[argumentBase + 3]);
+                return 0;
+            case WasmHost.IMPORT_TRACE:
+                lastTrace = readCString(memory, (int) valueStack[argumentBase]);
+                return 0;
+            case WasmHost.IMPORT_TRACEF:
+                lastTrace = formatTrace(
+                        memory,
+                        (int) valueStack[argumentBase],
+                        (int) valueStack[argumentBase + 1]);
+                return 0;
+            case WasmHost.IMPORT_TRACE_UTF8:
+                lastTrace = readString(
+                        memory,
+                        (int) valueStack[argumentBase],
+                        (int) valueStack[argumentBase + 1]);
+                return 0;
+            case WasmHost.IMPORT_TRACE_UTF16:
+                lastTrace = readUtf16String(
+                        memory,
+                        (int) valueStack[argumentBase],
+                        (int) valueStack[argumentBase + 1]);
+                return 0;
+            default:
+                throw new WasmTrap("unsupported import ID: " + importId);
+        }
+    }
+
+    public long invoke(
+            String moduleName,
+            String name,
+            long[] valueStack,
+            int argumentBase,
+            int argumentCount,
+            WasmModule module) {
+        if (!"env".equals(moduleName)) {
+            throw new WasmTrap("unsupported import module: " + moduleName);
+        }
+        if ("textUtf8".equals(name) && argumentCount == 4) {
+            textUtf8(
+                    module.memory(),
+                    (int) valueStack[argumentBase],
+                    (int) valueStack[argumentBase + 1],
+                    (int) valueStack[argumentBase + 2],
+                    (int) valueStack[argumentBase + 3]);
+            return 0;
+        }
+        if ("text".equals(name) && argumentCount == 3) {
+            text(
+                    module.memory(),
+                    (int) valueStack[argumentBase],
+                    (int) valueStack[argumentBase + 1],
+                    (int) valueStack[argumentBase + 2]);
+            return 0;
+        }
+        if ("textUtf16".equals(name) && argumentCount == 4) {
+            textUtf16(
+                    module.memory(),
+                    (int) valueStack[argumentBase],
+                    (int) valueStack[argumentBase + 1],
+                    (int) valueStack[argumentBase + 2],
+                    (int) valueStack[argumentBase + 3]);
+            return 0;
+        }
+        if ("rect".equals(name) && argumentCount == 4) {
+            rect(
+                    module.memory(),
+                    (int) valueStack[argumentBase],
+                    (int) valueStack[argumentBase + 1],
+                    (int) valueStack[argumentBase + 2],
+                    (int) valueStack[argumentBase + 3]);
+            return 0;
+        }
+        if ("blit".equals(name) && argumentCount == 6) {
+            blit(
+                    module.memory(),
+                    (int) valueStack[argumentBase],
+                    (int) valueStack[argumentBase + 1],
+                    (int) valueStack[argumentBase + 2],
+                    (int) valueStack[argumentBase + 3],
+                    (int) valueStack[argumentBase + 4],
+                    (int) valueStack[argumentBase + 5]);
+            return 0;
+        }
+        if ("blitSub".equals(name) && argumentCount == 9) {
+            blitSub(
+                    module.memory(),
+                    (int) valueStack[argumentBase],
+                    (int) valueStack[argumentBase + 1],
+                    (int) valueStack[argumentBase + 2],
+                    (int) valueStack[argumentBase + 3],
+                    (int) valueStack[argumentBase + 4],
+                    (int) valueStack[argumentBase + 5],
+                    (int) valueStack[argumentBase + 6],
+                    (int) valueStack[argumentBase + 7],
+                    (int) valueStack[argumentBase + 8]);
+            return 0;
+        }
+        if ("line".equals(name) && argumentCount == 4) {
+            line(
+                    module.memory(),
+                    (int) valueStack[argumentBase],
+                    (int) valueStack[argumentBase + 1],
+                    (int) valueStack[argumentBase + 2],
+                    (int) valueStack[argumentBase + 3]);
+            return 0;
+        }
+        if ("hline".equals(name) && argumentCount == 3) {
+            hline(
+                    module.memory(),
+                    (int) valueStack[argumentBase],
+                    (int) valueStack[argumentBase + 1],
+                    (int) valueStack[argumentBase + 2]);
+            return 0;
+        }
+        if ("vline".equals(name) && argumentCount == 3) {
+            vline(
+                    module.memory(),
+                    (int) valueStack[argumentBase],
+                    (int) valueStack[argumentBase + 1],
+                    (int) valueStack[argumentBase + 2]);
+            return 0;
+        }
+        if ("oval".equals(name) && argumentCount == 4) {
+            oval(
+                    module.memory(),
+                    (int) valueStack[argumentBase],
+                    (int) valueStack[argumentBase + 1],
+                    (int) valueStack[argumentBase + 2],
+                    (int) valueStack[argumentBase + 3]);
+            return 0;
+        }
+        if ("diskr".equals(name) && argumentCount == 2) {
+            return diskRead(
+                    module.memory(),
+                    (int) valueStack[argumentBase],
+                    (int) valueStack[argumentBase + 1]);
+        }
+        if ("diskw".equals(name) && argumentCount == 2) {
+            return diskWrite(
+                    module.memory(),
+                    (int) valueStack[argumentBase],
+                    (int) valueStack[argumentBase + 1]);
+        }
+        if ("tone".equals(name) && argumentCount == 4) {
+            apu.tone(
+                    (int) valueStack[argumentBase],
+                    (int) valueStack[argumentBase + 1],
+                    (int) valueStack[argumentBase + 2],
+                    (int) valueStack[argumentBase + 3]);
+            return 0;
+        }
+        if ("trace".equals(name) && argumentCount == 1) {
+            lastTrace = readCString(module.memory(), (int) valueStack[argumentBase]);
+            return 0;
+        }
+        if ("tracef".equals(name) && argumentCount == 2) {
+            lastTrace = formatTrace(
+                    module.memory(),
+                    (int) valueStack[argumentBase],
+                    (int) valueStack[argumentBase + 1]);
+            return 0;
+        }
+        if ("traceUtf8".equals(name) && argumentCount == 2) {
+            lastTrace = readString(
+                    module.memory(),
+                    (int) valueStack[argumentBase],
+                    (int) valueStack[argumentBase + 1]);
+            return 0;
+        }
+        if ("traceUtf16".equals(name) && argumentCount == 2) {
+            lastTrace = readUtf16String(
+                    module.memory(),
+                    (int) valueStack[argumentBase],
+                    (int) valueStack[argumentBase + 1]);
+            return 0;
+        }
+        throw new WasmTrap("unsupported import: " + moduleName + "." + name);
+    }
+
+    public String lastTrace() {
+        return lastTrace;
+    }
+
+    public void endFrame() {
+        apu.tick();
+    }
+
+    public Wasm4Apu apu() {
+        return apu;
+    }
+
+    public DiskBackend disk() {
+        return disk;
+    }
+
+    public void close() {
+        apu.close();
+        disk.close();
+    }
+
+    public void copyArgb(WasmModule module, int[] pixels) {
+        if (pixels.length < WIDTH * HEIGHT) {
+            throw new IllegalArgumentException("pixel buffer is too small");
+        }
+        prepareArgb(module);
+        byte[] memory = module.memory();
+        int packedIndex;
+        for (packedIndex = 0; packedIndex < FRAMEBUFFER_SIZE; packedIndex++) {
+            int lookup = (memory[FRAMEBUFFER + packedIndex] & 0xff) << 2;
+            int pixel = packedIndex << 2;
+            pixels[pixel] = argbLookup[lookup];
+            pixels[pixel + 1] = argbLookup[lookup + 1];
+            pixels[pixel + 2] = argbLookup[lookup + 2];
+            pixels[pixel + 3] = argbLookup[lookup + 3];
+        }
+    }
+
+    public void prepareArgb(WasmModule module) {
+        byte[] memory = module.memory();
+        boolean changed = false;
+        int index;
+        for (index = 0; index < 4; index++) {
+            int color = 0xff000000
+                    | (readI32(memory, PALETTE + index * 4) & 0x00ffffff);
+            if (palette[index] != color) {
+                palette[index] = color;
+                changed = true;
+            }
+        }
+        if (changed) {
+            int packed;
+            for (packed = 0; packed < 256; packed++) {
+                int lookup = packed << 2;
+                argbLookup[lookup] = palette[packed & 3];
+                argbLookup[lookup + 1] = palette[(packed >> 2) & 3];
+                argbLookup[lookup + 2] = palette[(packed >> 4) & 3];
+                argbLookup[lookup + 3] = palette[(packed >> 6) & 3];
+            }
+        }
+    }
+
+    public void copyArgbBand(
+            WasmModule module,
+            int[] pixels,
+            int width,
+            int[] xMap,
+            int[] yMap,
+            int firstRow,
+            int rowCount) {
+        if (width < 0
+                || rowCount < 0
+                || xMap.length < width
+                || firstRow < 0
+                || rowCount > yMap.length - firstRow
+                || pixels.length < width * rowCount) {
+            throw new IllegalArgumentException("invalid ARGB band geometry");
+        }
+        byte[] memory = module.memory();
+        int row;
+        for (row = 0; row < rowCount; row++) {
+            int sourceRow = yMap[firstRow + row];
+            int destinationRow = row * width;
+            int previousPackedAddress = -1;
+            int packed = 0;
+            int x;
+            for (x = 0; x < width; x++) {
+                int mapping = xMap[x];
+                int packedAddress = mapping & 0xff;
+                if (packedAddress != previousPackedAddress) {
+                    packed =
+                            memory[FRAMEBUFFER + sourceRow + packedAddress]
+                                    & 0xff;
+                    previousPackedAddress = packedAddress;
+                }
+                pixels[destinationRow + x] =
+                        argbLookup[(packed << 2) | (mapping >>> 8)];
+            }
+        }
+    }
+
+    public void copyUpscaledArgbBand(
+            WasmModule module,
+            int[] pixels,
+            int width,
+            int[] xMap,
+            int[] yMap,
+            int firstRow,
+            int rowCount) {
+        if (width <= WIDTH
+                || rowCount < 0
+                || xMap.length < width
+                || firstRow < 0
+                || rowCount > yMap.length - firstRow
+                || pixels.length < width * rowCount) {
+            throw new IllegalArgumentException(
+                    "invalid upscaled ARGB band geometry");
+        }
+        if (pixels == xMap || pixels == yMap) {
+            copyArgbBand(
+                    module,
+                    pixels,
+                    width,
+                    xMap,
+                    yMap,
+                    firstRow,
+                    rowCount);
+            return;
+        }
+        byte[] memory = module.memory();
+        int[] lookup = argbLookup;
+        int row;
+        for (row = 0; row < rowCount; row++) {
+            int sourceRow = yMap[firstRow + row];
+            int destinationRow = row * width;
+            if (row > 0 && sourceRow == yMap[firstRow + row - 1]) {
+                System.arraycopy(
+                        pixels,
+                        destinationRow - width,
+                        pixels,
+                        destinationRow,
+                        width);
+            } else {
+                int previousPackedAddress = -1;
+                int packed = 0;
+                int x;
+                for (x = 0; x < width; x++) {
+                    int mapping = xMap[x];
+                    int packedAddress = mapping & 0xff;
+                    if (packedAddress != previousPackedAddress) {
+                        packed =
+                                memory[FRAMEBUFFER
+                                                + sourceRow
+                                                + packedAddress]
+                                        & 0xff;
+                        previousPackedAddress = packedAddress;
+                    }
+                    pixels[destinationRow + x] =
+                            lookup[(packed << 2) | (mapping >>> 8)];
+                }
+            }
+        }
+    }
+
+    private void textUtf8(byte[] memory, int pointer, int byteLength, int x, int y) {
+        checkRange(memory, pointer, byteLength);
+        int currentX = x;
+        int index;
+        for (index = 0; index < byteLength; index++) {
+            int character = memory[pointer + index] & 0xff;
+            if (character == 0) {
+                break;
+            }
+            if (character == 10) {
+                y += 8;
+                currentX = x;
+            } else if (character >= 32) {
+                drawGlyph(memory, character, currentX, y);
+                currentX += 8;
+            } else {
+                currentX += 8;
+            }
+        }
+    }
+
+    private void text(byte[] memory, int pointer, int x, int y) {
+        if (pointer < 0 || pointer >= memory.length) {
+            throw new WasmTrap("text pointer is out of bounds");
+        }
+        int length = 0;
+        while (pointer + length < memory.length && memory[pointer + length] != 0) {
+            length++;
+        }
+        if (pointer + length == memory.length) {
+            throw new WasmTrap("unterminated text string");
+        }
+        textUtf8(memory, pointer, length, x, y);
+    }
+
+    private void textUtf16(byte[] memory, int pointer, int byteLength, int x, int y) {
+        if ((byteLength & 1) != 0) {
+            throw new WasmTrap("UTF-16 text byte length is odd");
+        }
+        checkRange(memory, pointer, byteLength);
+        int currentX = x;
+        int offset;
+        for (offset = 0; offset < byteLength; offset += 2) {
+            int character = readU16(memory, pointer + offset);
+            if (character == 0) {
+                break;
+            }
+            if (character == 10) {
+                y += 8;
+                currentX = x;
+            } else if (character >= 32 && character <= 255) {
+                drawGlyph(memory, character, currentX, y);
+                currentX += 8;
+            } else {
+                currentX += 8;
+            }
+        }
+    }
+
+    private void rect(byte[] memory, int x, int y, int width, int height) {
+        if (width <= 0 || height <= 0) {
+            return;
+        }
+        long endXUnclamped = (long) x + width;
+        long endYUnclamped = (long) y + height;
+        int startX = clampToScreen(x, WIDTH);
+        int startY = clampToScreen(y, HEIGHT);
+        int endX = clampToScreen(endXUnclamped, WIDTH);
+        int endY = clampToScreen(endYUnclamped, HEIGHT);
+        int colors = readU16(memory, DRAW_COLORS);
+        int fill = colors & 0x0f;
+        int stroke = (colors >> 4) & 0x0f;
+        int current;
+
+        if (fill != 0) {
+            for (current = startY; current < endY; current++) {
+                drawHorizontal(memory, (fill - 1) & 3, startX, current, endX);
+            }
+        }
+        if (stroke == 0) {
+            return;
+        }
+        int strokeColor = (stroke - 1) & 3;
+        if (x >= 0 && x < WIDTH) {
+            for (current = startY; current < endY; current++) {
+                drawPoint(memory, strokeColor, x, current);
+            }
+        }
+        if (endXUnclamped > 0 && endXUnclamped <= WIDTH) {
+            for (current = startY; current < endY; current++) {
+                drawPoint(memory, strokeColor, (int) endXUnclamped - 1, current);
+            }
+        }
+        if (y >= 0 && y < HEIGHT) {
+            drawHorizontal(memory, strokeColor, startX, y, endX);
+        }
+        if (endYUnclamped > 0 && endYUnclamped <= HEIGHT) {
+            drawHorizontal(memory, strokeColor, startX, (int) endYUnclamped - 1, endX);
+        }
+    }
+
+    private void hline(byte[] memory, int x, int y, int length) {
+        if (length <= 0 || y < 0 || y >= HEIGHT) {
+            return;
+        }
+        int drawColor = readU16(memory, DRAW_COLORS) & 0x0f;
+        if (drawColor == 0) {
+            return;
+        }
+        int startX = clampToScreen(x, WIDTH);
+        int endX = clampToScreen((long) x + length, WIDTH);
+        drawHorizontal(memory, (drawColor - 1) & 3, startX, y, endX);
+    }
+
+    private void vline(byte[] memory, int x, int y, int length) {
+        if (length <= 0 || x < 0 || x >= WIDTH) {
+            return;
+        }
+        int drawColor = readU16(memory, DRAW_COLORS) & 0x0f;
+        if (drawColor == 0) {
+            return;
+        }
+        int startY = clampToScreen(y, HEIGHT);
+        int endY = clampToScreen((long) y + length, HEIGHT);
+        int color = (drawColor - 1) & 3;
+        int currentY;
+        for (currentY = startY; currentY < endY; currentY++) {
+            drawPoint(memory, color, x, currentY);
+        }
+    }
+
+    private void line(byte[] memory, int x1, int y1, int x2, int y2) {
+        int drawColor = readU16(memory, DRAW_COLORS) & 0x0f;
+        if (drawColor == 0) {
+            return;
+        }
+        if ((x1 < 0 && x2 < 0)
+                || (x1 >= WIDTH && x2 >= WIDTH)
+                || (y1 < 0 && y2 < 0)
+                || (y1 >= HEIGHT && y2 >= HEIGHT)) {
+            return;
+        }
+        long horizontalSpan = absoluteLong((long) x2 - x1);
+        long verticalSpan = absoluteLong((long) y2 - y1);
+        if (horizontalSpan > LINE_STEP_LIMIT || verticalSpan > LINE_STEP_LIMIT) {
+            throw new WasmTrap("line geometry exceeds runtime step limit " + LINE_STEP_LIMIT);
+        }
+        int color = (drawColor - 1) & 3;
+        if (y1 > y2) {
+            int swap = x1;
+            x1 = x2;
+            x2 = swap;
+            swap = y1;
+            y1 = y2;
+            y2 = swap;
+        }
+        int deltaX = (int) horizontalSpan;
+        int stepX = x1 < x2 ? 1 : -1;
+        int deltaY = y2 - y1;
+        int error = (deltaX > deltaY ? deltaX : -deltaY) / 2;
+        while (true) {
+            drawPointUnclipped(memory, color, x1, y1);
+            if (x1 == x2 && y1 == y2) {
+                return;
+            }
+            int previousError = error;
+            if (previousError > -deltaX) {
+                error -= deltaY;
+                x1 += stepX;
+            }
+            if (previousError < deltaY) {
+                error += deltaX;
+                y1++;
+            }
+        }
+    }
+
+    private void oval(byte[] memory, int x, int y, int width, int height) {
+        if (width <= 0 || height <= 0) {
+            return;
+        }
+        long eastEdge = (long) x + width;
+        long southEdge = (long) y + height;
+        if (eastEdge <= 0 || southEdge <= 0 || x >= WIDTH || y >= HEIGHT) {
+            return;
+        }
+        if (width > OVAL_DIMENSION_LIMIT || height > OVAL_DIMENSION_LIMIT) {
+            throw new WasmTrap(
+                    "oval geometry exceeds runtime limit " + OVAL_DIMENSION_LIMIT);
+        }
+        int colors = readU16(memory, DRAW_COLORS);
+        int fill = colors & 0x0f;
+        int stroke = (colors >> 4) & 0x0f;
+        if (stroke == 0x0f) {
+            return;
+        }
+        int strokeColor = (stroke - 1) & 3;
+        int fillColor = (fill - 1) & 3;
+        int a = width - 1;
+        int b = height - 1;
+        int oddHeight = b % 2;
+        int north = y + height / 2;
+        int west = x;
+        int east = x + width - 1;
+        int south = north - oddHeight;
+        int aSquared = a * a;
+        int bSquared = b * b;
+        int deltaX = 4 * (1 - a) * bSquared;
+        int deltaY = 4 * (oddHeight + 1) * aSquared;
+        int error = deltaX + deltaY + oddHeight * aSquared;
+        a = 8 * aSquared;
+        oddHeight = 8 * bSquared;
+        do {
+            drawPointUnclipped(memory, strokeColor, east, north);
+            drawPointUnclipped(memory, strokeColor, west, north);
+            drawPointUnclipped(memory, strokeColor, west, south);
+            drawPointUnclipped(memory, strokeColor, east, south);
+            int start = west + 1;
+            int length = east - start;
+            if (fill != 0 && length > 0) {
+                drawHorizontalUnclipped(memory, fillColor, start, north, east);
+                drawHorizontalUnclipped(memory, fillColor, start, south, east);
+            }
+            int doubledError = 2 * error;
+            if (doubledError <= deltaY) {
+                north++;
+                south--;
+                deltaY += a;
+                error += deltaY;
+            }
+            if (doubledError >= deltaX || doubledError > deltaY) {
+                west++;
+                east--;
+                deltaX += oddHeight;
+                error += deltaX;
+            }
+        } while (west <= east);
+        while (north - south < height) {
+            drawPointUnclipped(memory, strokeColor, west - 1, north);
+            drawPointUnclipped(memory, strokeColor, east + 1, north);
+            north++;
+            drawPointUnclipped(memory, strokeColor, west - 1, south);
+            drawPointUnclipped(memory, strokeColor, east + 1, south);
+            south--;
+        }
+    }
+
+    private void blit(
+            byte[] memory,
+            int pointer,
+            int destinationX,
+            int destinationY,
+            int width,
+            int height,
+            int flags) {
+        blitSub(memory, pointer, destinationX, destinationY, width, height, 0, 0, width, flags);
+    }
+
+    private void blitSub(
+            byte[] memory,
+            int pointer,
+            int destinationX,
+            int destinationY,
+            int width,
+            int height,
+            int sourceX,
+            int sourceY,
+            int sourceStride,
+            int flags) {
+        if (width <= 0 || height <= 0) {
+            return;
+        }
+        if (sourceX < 0 || sourceY < 0 || sourceStride <= 0) {
+            throw new WasmTrap("invalid blit source geometry");
+        }
+        boolean twoBitsPerPixel = (flags & 1) != 0;
+        boolean flipX = (flags & 2) != 0;
+        boolean flipY = (flags & 4) != 0;
+        boolean rotate = (flags & 8) != 0;
+        long lastPixel = ((long) sourceY + height - 1L) * sourceStride
+                + sourceX
+                + width
+                - 1L;
+        long bitLength = (lastPixel + 1L) * (twoBitsPerPixel ? 2L : 1L);
+        if (lastPixel < 0 || bitLength > ((long) memory.length << 3)) {
+            throw new WasmTrap("blit source is too large");
+        }
+        checkRange(memory, pointer, (int) ((bitLength + 7) >> 3));
+
+        if (rotate) {
+            flipX = !flipX;
+        }
+        long clipXOrigin = rotate ? destinationY : destinationX;
+        long clipYOrigin = rotate ? destinationX : destinationY;
+        int clipXMinimum = clampToRange(-clipXOrigin, width);
+        int clipYMinimum = clampToRange(-clipYOrigin, height);
+        int clipXMaximum = clampToRange(HEIGHT - clipXOrigin, width);
+        int clipYMaximum = clampToRange(WIDTH - clipYOrigin, height);
+        int colors = readU16(memory, DRAW_COLORS);
+
+        if ((flags & 14) == 0) {
+            int plainY;
+            for (plainY = clipYMinimum; plainY < clipYMaximum; plainY++) {
+                int targetX = destinationX + clipXMinimum;
+                int targetY = destinationY + plainY;
+                int bitIndex =
+                        (sourceY + plainY) * sourceStride
+                                + sourceX
+                                + clipXMinimum;
+                int framebufferAddress =
+                        FRAMEBUFFER
+                                + ((WIDTH * targetY + targetX) >> 2);
+                int framebufferShift = (targetX & 3) << 1;
+                int plainX;
+                for (plainX = clipXMinimum;
+                        plainX < clipXMaximum;
+                        plainX++) {
+                    int colorIndex;
+                    if (twoBitsPerPixel) {
+                        int packed = memory[pointer + (bitIndex >> 2)] & 0xff;
+                        colorIndex =
+                                (packed >> (6 - ((bitIndex & 3) << 1))) & 3;
+                    } else {
+                        int packed = memory[pointer + (bitIndex >> 3)] & 0xff;
+                        colorIndex = (packed >> (7 - (bitIndex & 7))) & 1;
+                    }
+                    int drawColor = (colors >> (colorIndex << 2)) & 0x0f;
+                    if (drawColor != 0) {
+                        memory[framebufferAddress] =
+                                (byte)
+                                    ((((drawColor - 1) & 3)
+                                                    << framebufferShift)
+                                            | ((memory[framebufferAddress]
+                                                                    & 0xff)
+                                                    & ~(3
+                                                            << framebufferShift)));
+                    }
+                    framebufferShift += 2;
+                    if (framebufferShift == 8) {
+                        framebufferShift = 0;
+                        framebufferAddress++;
+                    }
+                    bitIndex++;
+                }
+            }
+            return;
+        }
+
+        int yIndex;
+        for (yIndex = clipYMinimum; yIndex < clipYMaximum; yIndex++) {
+            int xIndex;
+            for (xIndex = clipXMinimum; xIndex < clipXMaximum; xIndex++) {
+                int targetX = destinationX + (rotate ? yIndex : xIndex);
+                int targetY = destinationY + (rotate ? xIndex : yIndex);
+                int sampledX = sourceX + (flipX ? width - xIndex - 1 : xIndex);
+                int sampledY = sourceY + (flipY ? height - yIndex - 1 : yIndex);
+                int bitIndex = sampledY * sourceStride + sampledX;
+                int colorIndex;
+                if (twoBitsPerPixel) {
+                    int packed = memory[pointer + (bitIndex >> 2)] & 0xff;
+                    colorIndex = (packed >> (6 - ((bitIndex & 3) << 1))) & 3;
+                } else {
+                    int packed = memory[pointer + (bitIndex >> 3)] & 0xff;
+                    colorIndex = (packed >> (7 - (bitIndex & 7))) & 1;
+                }
+                int drawColor = (colors >> (colorIndex << 2)) & 0x0f;
+                if (drawColor != 0) {
+                    drawPoint(memory, (drawColor - 1) & 3, targetX, targetY);
+                }
+            }
+        }
+    }
+
+    private void drawHorizontal(byte[] memory, int color, int startX, int y, int endX) {
+        int x;
+        for (x = startX; x < endX; x++) {
+            drawPoint(memory, color, x, y);
+        }
+    }
+
+    private void drawHorizontalUnclipped(
+            byte[] memory, int color, int startX, int y, int endX) {
+        if (y < 0 || y >= HEIGHT) {
+            return;
+        }
+        if (startX < 0) {
+            startX = 0;
+        }
+        if (endX > WIDTH) {
+            endX = WIDTH;
+        }
+        if (startX < endX) {
+            drawHorizontal(memory, color, startX, y, endX);
+        }
+    }
+
+    private void drawGlyph(byte[] memory, int character, int x, int y) {
+        int colors = readU16(memory, DRAW_COLORS);
+        int glyphOffset = (character - 32) << 3;
+        int row;
+        for (row = 0; row < 8; row++) {
+            int targetY = y + row;
+            if (targetY < 0 || targetY >= HEIGHT) {
+                continue;
+            }
+            int bits = font[glyphOffset + row] & 0xff;
+            int column;
+            for (column = 0; column < 8; column++) {
+                int targetX = x + column;
+                if (targetX < 0 || targetX >= WIDTH) {
+                    continue;
+                }
+                int sourceColor = (bits >> (7 - column)) & 1;
+                int drawColor = (colors >> (sourceColor << 2)) & 0x0f;
+                if (drawColor != 0) {
+                    drawPoint(memory, (drawColor - 1) & 3, targetX, targetY);
+                }
+            }
+        }
+    }
+
+    private void drawPoint(byte[] memory, int color, int x, int y) {
+        int pixel = WIDTH * y + x;
+        int address = FRAMEBUFFER + (pixel >> 2);
+        int shift = (x & 3) << 1;
+        int mask = 3 << shift;
+        memory[address] = (byte) ((color << shift) | ((memory[address] & 0xff) & ~mask));
+    }
+
+    private void drawPointUnclipped(byte[] memory, int color, int x, int y) {
+        if (x >= 0 && x < WIDTH && y >= 0 && y < HEIGHT) {
+            drawPoint(memory, color, x, y);
+        }
+    }
+
+    private int diskRead(byte[] memory, int pointer, int size) {
+        int count = diskTransferSize(memory, pointer, size);
+        return disk.read(memory, pointer, count);
+    }
+
+    private int diskWrite(byte[] memory, int pointer, int size) {
+        int count = diskTransferSize(memory, pointer, size);
+        return disk.write(memory, pointer, count);
+    }
+
+    private int diskTransferSize(byte[] memory, int pointer, int size) {
+        if (size < 0) {
+            throw new WasmTrap("negative disk transfer size");
+        }
+        int count = min(size, 1024);
+        checkRange(memory, pointer, count);
+        return count;
+    }
+
+    private String readString(byte[] memory, int pointer, int byteLength) {
+        checkRange(memory, pointer, byteLength);
+        StringBuffer result = new StringBuffer(byteLength);
+        int index;
+        for (index = 0; index < byteLength; index++) {
+            int value = memory[pointer + index] & 0xff;
+            if (value == 0) {
+                break;
+            }
+            result.append((char) value);
+        }
+        return result.toString();
+    }
+
+    private String readCString(byte[] memory, int pointer) {
+        if (pointer < 0 || pointer >= memory.length) {
+            throw new WasmTrap("trace pointer is out of bounds");
+        }
+        int length = 0;
+        while (pointer + length < memory.length && memory[pointer + length] != 0) {
+            length++;
+        }
+        if (pointer + length == memory.length) {
+            throw new WasmTrap("unterminated trace string");
+        }
+        return readString(memory, pointer, length);
+    }
+
+    private String readUtf16String(byte[] memory, int pointer, int byteLength) {
+        if ((byteLength & 1) != 0) {
+            throw new WasmTrap("UTF-16 trace byte length is odd");
+        }
+        checkRange(memory, pointer, byteLength);
+        StringBuffer result = new StringBuffer(byteLength / 2);
+        int offset;
+        for (offset = 0; offset < byteLength; offset += 2) {
+            int value = readU16(memory, pointer + offset);
+            if (value == 0) {
+                break;
+            }
+            result.append((char) value);
+        }
+        return result.toString();
+    }
+
+    private String formatTrace(byte[] memory, int formatPointer, int argumentPointer) {
+        if (formatPointer < 0 || formatPointer >= memory.length) {
+            throw new WasmTrap("tracef format pointer is out of bounds");
+        }
+        StringBuffer result = new StringBuffer();
+        int pointer = formatPointer;
+        while (true) {
+            if (pointer >= memory.length) {
+                throw new WasmTrap("unterminated tracef format string");
+            }
+            int character = memory[pointer++] & 0xff;
+            if (character == 0) {
+                return result.toString();
+            }
+            if (character != '%') {
+                appendTraceCharacter(result, (char) character);
+                continue;
+            }
+            if (pointer >= memory.length) {
+                throw new WasmTrap("unterminated tracef format string");
+            }
+            int format = memory[pointer++] & 0xff;
+            if (format == 0) {
+                return result.toString();
+            }
+            if (format == '%') {
+                appendTraceCharacter(result, '%');
+            } else if (format == 'c') {
+                checkRange(memory, argumentPointer, 4);
+                appendTraceCharacter(result, (char) readI32(memory, argumentPointer));
+                argumentPointer += 4;
+            } else if (format == 'd') {
+                checkRange(memory, argumentPointer, 4);
+                appendTraceString(
+                        result, Integer.toString(readI32(memory, argumentPointer)));
+                argumentPointer += 4;
+            } else if (format == 'x') {
+                checkRange(memory, argumentPointer, 4);
+                appendTraceString(
+                        result, Integer.toHexString(readI32(memory, argumentPointer)));
+                argumentPointer += 4;
+            } else if (format == 's') {
+                checkRange(memory, argumentPointer, 4);
+                int stringPointer = readI32(memory, argumentPointer);
+                argumentPointer += 4;
+                appendTraceCString(memory, stringPointer, result);
+            } else if (format == 'f') {
+                checkRange(memory, argumentPointer, 8);
+                appendTraceString(
+                        result,
+                        formatTraceDouble(
+                                Double.longBitsToDouble(
+                                        readI64(memory, argumentPointer))));
+                argumentPointer += 8;
+            } else {
+                appendTraceCharacter(result, '%');
+                appendTraceCharacter(result, (char) format);
+            }
+        }
+    }
+
+    private void appendTraceCString(byte[] memory, int pointer, StringBuffer result) {
+        if (pointer < 0 || pointer >= memory.length) {
+            throw new WasmTrap("tracef string pointer is out of bounds");
+        }
+        while (pointer < memory.length) {
+            int value = memory[pointer++] & 0xff;
+            if (value == 0) {
+                return;
+            }
+            appendTraceCharacter(result, (char) value);
+        }
+        throw new WasmTrap("unterminated tracef string argument");
+    }
+
+    private void appendTraceString(StringBuffer result, String value) {
+        if (value.length() > TRACE_OUTPUT_LIMIT - result.length()) {
+            throw new WasmTrap("tracef output exceeds runtime limit " + TRACE_OUTPUT_LIMIT);
+        }
+        result.append(value);
+    }
+
+    private void appendTraceCharacter(StringBuffer result, char value) {
+        if (result.length() >= TRACE_OUTPUT_LIMIT) {
+            throw new WasmTrap("tracef output exceeds runtime limit " + TRACE_OUTPUT_LIMIT);
+        }
+        result.append(value);
+    }
+
+    private String formatTraceDouble(double value) {
+        long bits = Double.doubleToLongBits(value);
+        boolean negative = bits < 0;
+        double absolute = negative ? -value : value;
+        if (Double.isNaN(value)) {
+            return "nan";
+        }
+        if (Double.isInfinite(value)) {
+            return negative ? "-inf" : "inf";
+        }
+        if (absolute == 0.0) {
+            return negative ? "-0" : "0";
+        }
+
+        int exponent = 0;
+        double mantissa = absolute;
+        while (mantissa >= 10.0) {
+            mantissa /= 10.0;
+            exponent++;
+        }
+        while (mantissa < 1.0) {
+            mantissa *= 10.0;
+            exponent--;
+        }
+        long mantissaScaled = (long) Math.floor(mantissa * 100000.0 + 0.5);
+        if (mantissaScaled >= 1000000L) {
+            mantissaScaled = 100000L;
+            exponent++;
+        }
+
+        StringBuffer result = new StringBuffer();
+        if (negative) {
+            result.append('-');
+        }
+        if (exponent < -4 || exponent >= 6) {
+            appendScaledDecimal(result, mantissaScaled, 100000L, 5);
+            result.append('e');
+            if (exponent < 0) {
+                result.append('-');
+                exponent = -exponent;
+            } else {
+                result.append('+');
+            }
+            if (exponent < 10) {
+                result.append('0');
+            }
+            result.append(exponent);
+            return result.toString();
+        }
+
+        int fractionDigits = 5 - exponent;
+        long fractionScale = powerOfTen(fractionDigits);
+        long scaled = (long) Math.floor(absolute * fractionScale + 0.5);
+        appendScaledDecimal(result, scaled, fractionScale, fractionDigits);
+        return result.toString();
+    }
+
+    private void appendScaledDecimal(
+            StringBuffer output, long scaled, long scale, int fractionDigits) {
+        output.append(scaled / scale);
+        long fraction = scaled % scale;
+        if (fraction == 0 || fractionDigits == 0) {
+            return;
+        }
+        String digits = Long.toString(fraction);
+        int padding = fractionDigits - digits.length();
+        output.append('.');
+        while (padding-- > 0) {
+            output.append('0');
+        }
+        int end = digits.length();
+        while (end > 0 && digits.charAt(end - 1) == '0') {
+            end--;
+        }
+        output.append(digits.substring(0, end));
+    }
+
+    private long powerOfTen(int exponent) {
+        long result = 1;
+        int index;
+        for (index = 0; index < exponent; index++) {
+            result *= 10;
+        }
+        return result;
+    }
+
+    private void checkRange(byte[] memory, int pointer, int length) {
+        if (pointer < 0 || length < 0 || length > memory.length - pointer) {
+            throw new WasmTrap("host function memory range is out of bounds");
+        }
+    }
+
+    private static int readU16(byte[] memory, int address) {
+        return (memory[address] & 0xff) | ((memory[address + 1] & 0xff) << 8);
+    }
+
+    private static int readI32(byte[] memory, int address) {
+        return (memory[address] & 0xff)
+                | ((memory[address + 1] & 0xff) << 8)
+                | ((memory[address + 2] & 0xff) << 16)
+                | (memory[address + 3] << 24);
+    }
+
+    private static long readI64(byte[] memory, int address) {
+        long low = readI32(memory, address) & 0xffffffffL;
+        long high = readI32(memory, address + 4) & 0xffffffffL;
+        return low | (high << 32);
+    }
+
+    private static int min(int left, int right) {
+        return left < right ? left : right;
+    }
+
+    private static int max(int left, int right) {
+        return left > right ? left : right;
+    }
+
+    private static int clampToScreen(long value, int size) {
+        if (value <= 0) {
+            return 0;
+        }
+        if (value >= size) {
+            return size;
+        }
+        return (int) value;
+    }
+
+    private static int clampToRange(long value, int maximum) {
+        if (value <= 0) {
+            return 0;
+        }
+        if (value >= maximum) {
+            return maximum;
+        }
+        return (int) value;
+    }
+
+    private static long absoluteLong(long value) {
+        return value < 0 ? -value : value;
+    }
+
+    private static void writeI16(byte[] memory, int address, int value) {
+        memory[address] = (byte) value;
+        memory[address + 1] = (byte) (value >>> 8);
+    }
+
+    private static void writeI32(byte[] memory, int address, int value) {
+        memory[address] = (byte) value;
+        memory[address + 1] = (byte) (value >>> 8);
+        memory[address + 2] = (byte) (value >>> 16);
+        memory[address + 3] = (byte) (value >>> 24);
+    }
+}

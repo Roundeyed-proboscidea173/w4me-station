@@ -1,0 +1,2 @@
+frame,gamepad,mouse_x,mouse_y,mouse_buttons,framebuffer_sha256,framebuffer_fnv1a,palette0,palette1,palette2,palette3,checkpoint
+0,0,32767,32767,0,36257a0b35add0f58649174d73f7d568a82f0ca1a251639cb1acc24ae0118fda,a9255758,00fff6d3,00004231,00764462,00edb4a1,idle-first-generation

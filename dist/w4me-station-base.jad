@@ -1,0 +1,12 @@
+MIDlet-Name: W4ME Station
+MIDlet-Version: 1.0.0
+MIDlet-Vendor: W4ME
+MIDlet-Description: Run unmodified WASM-4 cartridges on Java ME phones
+MIDlet-Info-URL: https://github.com/mulfyx/w4me-station
+MIDlet-Icon: /icon.png
+MIDlet-1: W4ME Station,/icon.png,w4me.midp.W4MeMidlet
+MicroEdition-Configuration: CLDC-1.1
+MicroEdition-Profile: MIDP-2.0
+MIDlet-Permissions-Opt: javax.microedition.io.Connector.http, javax.microedition.io.Connector.https, javax.microedition.io.Connector.file.read
+MIDlet-Jar-URL: w4me-station-base.jar
+MIDlet-Jar-Size: 272022

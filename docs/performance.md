@@ -1,0 +1,134 @@
+# Performance and runtime verification
+
+W4ME Station uses different environments for different questions. No single
+emulator represents every physical Java ME phone.
+
+## Environment roles
+
+| Environment | Authoritative use |
+| --- | --- |
+| Native i686 phoneME C interpreter | interpreter performance A/B |
+| AArch64 phoneME under QEMU | cross-ISA deterministic correctness only |
+| KEmulator | interactive MIDP, Canvas, touch, RMS, JSR-75, installation, and audio checks |
+| Host JVM | fast deterministic state, parser, and framebuffer regression tests |
+| Physical devices | final usability, audio latency, heap, controls, and frame rate |
+
+KEmulator executes MIDlet bytecode on a desktop JVM. Limiting its CPU share is
+a useful pressure test, but it does not turn HotSpot into a feature-phone VM.
+QEMU TCG timing measures binary translation and is never performance evidence.
+
+## Local phoneME rig
+
+The optional reference rig is expected at `.local/phoneme/` or at
+`PHONEME_HOME`:
+
+```text
+.local/phoneme/
+├── classes.zip
+├── cldc_vm_r
+├── cldc_vm_r-arm64
+└── preverify
+```
+
+The binaries were built from
+[`magicus/phoneME`](https://github.com/magicus/phoneME) plus modifications
+maintained in a private source tree. That complete modified source is not
+public yet. Because phoneME is GPL-2.0-only, the binaries are ignored and must
+not be added to this repository or to release artifacts until their exact
+corresponding source and build files can be published.
+
+## Commands
+
+```sh
+just bench
+just bench --reps 5
+just bench rubido --mode optimized --reps 8
+just bench game-of-life-zig-edition --reps 8
+tools/phoneme/run.sh verify
+tools/phoneme/run.sh verify-arm64
+```
+
+The benchmark compiles the interpreter and runtime with Java 1.3 settings
+against phoneME's CLDC `classes.zip`, preverifies the result, stages the
+cartridges and exact routes, and starts a fresh VM for every sample.
+The default corpus includes Waternet, Rubido, Untangle, and the
+integer/control-flow-heavy first generation of Game of Life. Recorded game
+routes retain a 60-frame tail; Game of Life deliberately uses one frame
+because that frame alone executes about 12.8 million WASM instructions.
+`--extra-frames` overrides this per-route default when a longer diagnostic run
+is intentional.
+
+Generated artifacts and receipts are written to `build/reports/phoneme/`.
+
+## Acceptance rules
+
+- The native i686 `cldc_vm_r` is the only timing judge for interpreter changes.
+- Compare matching alternating pairs, not independent candidate medians.
+- Every route must preserve framebuffer, palette, input, disk, and deterministic
+  interpreter counters.
+- Small changes must clear timer resolution and run-to-run noise.
+- AArch64 counters and checkpoints must match i686 exactly, but AArch64 wall
+  time is ignored.
+- Physical-device behavior can override an emulator-only conclusion.
+
+The current goal is correctness and useful physical-device performance, not a
+desktop benchmark score. Historical experiment receipts are intentionally not
+kept in the public source tree.
+
+## Standing optimization target: Glowfish Chess `VS CPU`
+
+This is the heaviest real workload in the release catalog and the reference case
+for how far the interpreter still is from running a cartridge that computes a
+whole move inside one frame.
+
+The cartridge runs a fixed depth-2 alpha-beta search plus an unbounded
+quiescence search inside a single `update()` call, so its cost is set by the
+position, not by the frame rate. Replaying a scripted game through the counting
+interpreter gives, per engine turn:
+
+| Engine turn | Logical instructions |
+| --- | --- |
+| 1 | 163,079,705 |
+| 2 | 36,288,242 |
+| 3 | 199,347,994 |
+| 4 | 554,929,307 |
+| 5 | 165,811,127 |
+| 6 | 258,506,628 |
+| 7 | 199,097,656 |
+| 8 | 128,237,895 |
+| 9 | 129,881,756 |
+| 10 | 124,653,796 |
+
+Six of ten turns exceed the 150,000,000 per-frame budget and abort the
+cartridge; the first search after leaving the opening book already does. The
+turns that survive sit at 83 to 87 percent of the budget, which is around 72
+seconds on the desktop `cldc_vm_r` and minutes on a handset, so they are not
+playable either. A normal frame of the same cartridge costs 14,828.
+
+`VS Player` never reaches the engine and stays at roughly 15,000 instructions
+per frame for a whole game, so hot-seat play is unaffected.
+
+Treat this as a ceiling marker rather than a regression: making `VS CPU` usable
+needs an order-of-magnitude interpreter gain, not a few percent. It is a useful
+target because the workload is pure integer, allocation-free in the hot path
+apart from a full board copy per node, and completely deterministic.
+
+## KEmulator
+
+Open an interactive session with:
+
+```sh
+just run
+tools/kemu/run.sh session cmd state
+tools/kemu/run.sh session stop
+```
+
+Specialized integration and diagnostic scenarios are available through:
+
+```sh
+tools/kemu/run.sh verify <scenario> dist/w4me-station.jar
+tools/kemu/run.sh bench <scenario> [args...]
+tools/kemu/run.sh phone dist/w4me-station.jar
+```
+
+KEmulator output is written below `build/reports/kemu/`.
