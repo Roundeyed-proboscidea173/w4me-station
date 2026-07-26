@@ -8,7 +8,8 @@ W4ME Station ships as two matching JAD/JAR pairs:
 | `w4me-station-base.jad` / `w4me-station-base.jar` | The full build is rejected, or the phone does not implement JSR-75 |
 
 Both variants contain the same runtime and bundled cartridges. The base variant
-only removes the optional local-file browser.
+removes the optional local-file browser, its JSR-75 classes, and its file-read
+permission declaration.
 
 ## Transfer and install
 

@@ -19,6 +19,18 @@ cmd_jar() {
         printf 'error: JAD not found: %s\n' "${JAD_PATH}" >&2
         exit 1
     fi
+    case "$(basename -- "${JAR_PATH}")" in
+    w4me-station.jar)
+        expect_jsr75=true
+        ;;
+    w4me-station-base.jar)
+        expect_jsr75=false
+        ;;
+    *)
+        printf 'error: unknown release JAR variant: %s\n' "${JAR_PATH}" >&2
+        exit 1
+        ;;
+    esac
 
     for class_name in w4me.midp.W4Canvas w4me.wasm.WasmInterpreter; do
         class_dump="$(javap -verbose -classpath "${JAR_PATH}" "${class_name}")"
@@ -132,7 +144,32 @@ cmd_jar() {
                 "${metadata_file}" >&2
             exit 1
         fi
+        if [ "${expect_jsr75}" = true ]; then
+            if ! printf '%s\n' "${metadata}" |
+                grep -q 'javax\.microedition\.io\.Connector\.file\.read'; then
+                printf 'error: %s full variant does not declare JSR-75 file permission\n' \
+                    "${metadata_file}" >&2
+                exit 1
+            fi
+        elif printf '%s\n' "${metadata}" |
+            grep -q 'javax\.microedition\.io\.Connector\.file\.read'; then
+            printf 'error: %s base variant declares JSR-75 file permission\n' \
+                "${metadata_file}" >&2
+            exit 1
+        fi
     done
+
+    jar_entries="$(unzip -Z1 "${JAR_PATH}")"
+    if [[ "${jar_entries}" == *'w4me/midp/Jsr75FileSystem.class'* ]]; then
+        has_jsr75=true
+    else
+        has_jsr75=false
+    fi
+    if [ "${has_jsr75}" != "${expect_jsr75}" ]; then
+        printf 'error: JSR-75 class presence mismatch: expected %s, got %s\n' \
+            "${expect_jsr75}" "${has_jsr75}" >&2
+        exit 1
+    fi
 
     if ! unzip -p "${JAR_PATH}" META-INF/THIRD-PARTY-NOTICES.md |
         grep -q 'Creative Commons Attribution-NonCommercial-ShareAlike 4.0'; then

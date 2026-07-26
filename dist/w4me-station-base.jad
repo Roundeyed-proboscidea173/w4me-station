@@ -7,6 +7,6 @@ MIDlet-Icon: /icon.png
 MIDlet-1: W4ME Station,/icon.png,w4me.midp.W4MeMidlet
 MicroEdition-Configuration: CLDC-1.1
 MicroEdition-Profile: MIDP-2.0
-MIDlet-Permissions-Opt: javax.microedition.io.Connector.http, javax.microedition.io.Connector.https, javax.microedition.io.Connector.file.read
+MIDlet-Permissions-Opt: javax.microedition.io.Connector.http, javax.microedition.io.Connector.https
 MIDlet-Jar-URL: w4me-station-base.jar
-MIDlet-Jar-Size: 272022
+MIDlet-Jar-Size: 272014

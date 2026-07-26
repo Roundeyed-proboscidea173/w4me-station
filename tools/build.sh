@@ -62,10 +62,14 @@ find "${CLASSES_DIR}" -exec touch -h -t 198001010000.00 -- {} +
 cp -R -- "${CLASSES_DIR}" "${BASE_CLASSES_DIR}"
 find "${BASE_CLASSES_DIR}/w4me/midp" \
     -name 'Jsr75FileSystem*.class' -delete
+sed -i \
+    's/, javax\.microedition\.io\.Connector\.file\.read$//' \
+    "${BASE_CLASSES_DIR}/META-INF/MANIFEST.MF"
 
 package_variant() {
     classes_dir="$1"
     stem="$2"
+    include_jsr75="$3"
     raw_jar_path="${BUILD_DIR}/${stem}-unverified.jar"
     jar_path="${DIST_DIR}/${stem}.jar"
     jad_path="${DIST_DIR}/${stem}.jad"
@@ -114,7 +118,11 @@ package_variant() {
         printf '%s\n' 'MIDlet-1: W4ME Station,/icon.png,w4me.midp.W4MeMidlet'
         printf '%s\n' 'MicroEdition-Configuration: CLDC-1.1'
         printf '%s\n' 'MicroEdition-Profile: MIDP-2.0'
-        printf '%s\n' 'MIDlet-Permissions-Opt: javax.microedition.io.Connector.http, javax.microedition.io.Connector.https, javax.microedition.io.Connector.file.read'
+        if [ "${include_jsr75}" = true ]; then
+            printf '%s\n' 'MIDlet-Permissions-Opt: javax.microedition.io.Connector.http, javax.microedition.io.Connector.https, javax.microedition.io.Connector.file.read'
+        else
+            printf '%s\n' 'MIDlet-Permissions-Opt: javax.microedition.io.Connector.http, javax.microedition.io.Connector.https'
+        fi
         printf 'MIDlet-Jar-URL: %s\n' "$(basename -- "${jar_path}")"
         printf 'MIDlet-Jar-Size: %s\n' "${jar_size}"
     } >"${jad_path}"
@@ -123,5 +131,5 @@ package_variant() {
     printf 'Built %s (%s bytes, Java ME preverified)\n' "${jar_path}" "${jar_size}"
 }
 
-package_variant "${CLASSES_DIR}" "w4me-station"
-package_variant "${BASE_CLASSES_DIR}" "w4me-station-base"
+package_variant "${CLASSES_DIR}" "w4me-station" true
+package_variant "${BASE_CLASSES_DIR}" "w4me-station-base" false

@@ -16,7 +16,8 @@ Java 1.3-compatible bytecode.
 - latched gamepad input for slow frames, pointer input, and an on-screen touch
   controller;
 - graphics, audio, disk, tracing, and two-gamepad WASM-4 host APIs;
-- full and base JAR variants, both below 300 KB;
+- full and base JAR variants, both below 300 KB; the base variant contains no
+  JSR-75 classes or permission declaration;
 - deterministic state, framebuffer, audio, storage, KEmulator, and optional
   native no-JIT phoneME verification.
 

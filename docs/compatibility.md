@@ -9,7 +9,7 @@ framebuffer, input, disk, and audio oracles where available.
 | Area | Status | Scope and differences |
 | --- | --- | --- |
 | Java ME platform | Required | CLDC 1.1, MIDP 2.0, and Java 1.3-compatible bytecode |
-| Release variants | Supported | The full JAR can use optional JSR-75 FileConnection; the base JAR contains no JSR-75 references |
+| Release variants | Supported | The full JAR can use optional JSR-75 FileConnection; the base JAR contains no JSR-75 classes or permissions |
 | Graphics | Supported | 160×160 2bpp framebuffer, palettes, drawing primitives, text, `blit`, `blitSub`, and preserve-framebuffer behavior |
 | Input | Partial | Phone keys, pointer input, and a touch controller are mapped to two gamepads; WASM-4 exposes four gamepad registers |
 | Audio | Device-dependent | The `tone` API, four logical channels, sampled output, streamed MIDI compatibility output, and `playTone` fallback are implemented, but timing and waveform fidelity depend on MMAPI |

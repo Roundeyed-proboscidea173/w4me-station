@@ -24,11 +24,12 @@ below 300 KB.
 
 | Variant | Application | Descriptor |
 | --- | --- | --- |
-| Full, with optional JSR-75 file browsing | [w4me-station.jar](dist/w4me-station.jar?raw=1) | [w4me-station.jad](dist/w4me-station.jad?raw=1) |
-| Base, without JSR-75 classes | [w4me-station-base.jar](dist/w4me-station-base.jar?raw=1) | [w4me-station-base.jad](dist/w4me-station-base.jad?raw=1) |
+| Full, with optional JSR-75 file browsing | [w4me-station.jar](https://github.com/mulfyx/w4me-station/releases/download/v1.0.0/w4me-station.jar) | [w4me-station.jad](https://github.com/mulfyx/w4me-station/releases/download/v1.0.0/w4me-station.jad) |
+| Base, without JSR-75 classes or permissions | [w4me-station-base.jar](https://github.com/mulfyx/w4me-station/releases/download/v1.0.0/w4me-station-base.jar) | [w4me-station-base.jad](https://github.com/mulfyx/w4me-station/releases/download/v1.0.0/w4me-station-base.jad) |
 
-[SHA-256 checksums](dist/SHA256SUMS) are stored beside the version `1.0.0`
-artifacts.
+[Release notes](https://github.com/mulfyx/w4me-station/releases/tag/v1.0.0)
+and [SHA-256 checksums](https://github.com/mulfyx/w4me-station/releases/download/v1.0.0/SHA256SUMS)
+are stored beside the immutable version `1.0.0` artifacts.
 
 W4ME Station targets CLDC 1.1 / MIDP 2.0 devices. It is independent from and not
 endorsed by the WASM-4 maintainers.
@@ -98,7 +99,7 @@ Artifacts are written to `dist/`:
 | Artifact | Purpose |
 | --- | --- |
 | `w4me-station.jar` / `.jad` | full build with optional JSR-75 file browsing |
-| `w4me-station-base.jar` / `.jad` | build without JSR-75 classes |
+| `w4me-station-base.jar` / `.jad` | build without JSR-75 classes or permissions |
 
 Both variants contain the same thirteen cartridges. The base build works on MIDP
 2.0 devices that do not implement the optional FileConnection API.

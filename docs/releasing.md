@@ -8,6 +8,8 @@ Before publishing:
   from the source tree and complete public history;
 - confirm that intermediate build output and emulator state are ignored;
 - confirm that the checked-in `dist/` artifacts match a fresh `just release`;
+- confirm that README download links target the immutable versioned release
+  assets rather than files from `main`;
 - review `LICENSE`, `THIRD_PARTY_NOTICES.md`, `SECURITY.md`, and
   `CONTRIBUTING.md`;
 - check the source tree for machine-specific absolute paths and private
@@ -40,8 +42,12 @@ Release artifacts:
 | File | Purpose |
 | --- | --- |
 | `w4me-station.jar` / `.jad` | full build with optional JSR-75 browsing |
-| `w4me-station-base.jar` / `.jad` | build without JSR-75 classes |
+| `w4me-station-base.jar` / `.jad` | build without JSR-75 classes or permissions |
 | `SHA256SUMS` | hashes for all four release files |
+
+The base JAR and JAD must not contain JSR-75 classes or declare the
+`javax.microedition.io.Connector.file.read` permission. The full variant must
+contain both.
 
 ## Release notes
 
