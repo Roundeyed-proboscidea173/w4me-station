@@ -40,6 +40,9 @@ original file or network connection.
 - **Missing FileConnection class:** install the base variant.
 - **No sound:** open `Sound settings`, keep `Sound` enabled, and try
   `Compatible` audio mode.
+- **Music stutters while sound effects work:** this is a confirmed limitation on
+  the tested Nokia E71. `Compatible` mode may change which MMAPI path is used,
+  but the current release does not guarantee gapless music on physical phones.
 - **Very slow cartridge:** return to the library and try Sokoban, Wasm Wars,
   Duck Maze, or another turn-based cartridge. Performance depends on the
   handset VM.

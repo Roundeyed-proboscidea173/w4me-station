@@ -4,6 +4,30 @@ W4ME Station runs unmodified WASM-4 cartridges through a WebAssembly
 interpreter on CLDC 1.1 / MIDP 2.0. Compatibility is verified against exact
 framebuffer, input, disk, and audio oracles where available.
 
+## Compatibility matrix
+
+| Area | Status | Scope and differences |
+| --- | --- | --- |
+| Java ME platform | Required | CLDC 1.1, MIDP 2.0, and Java 1.3-compatible bytecode |
+| Release variants | Supported | The full JAR can use optional JSR-75 FileConnection; the base JAR contains no JSR-75 references |
+| Graphics | Supported | 160×160 2bpp framebuffer, palettes, drawing primitives, text, `blit`, `blitSub`, and preserve-framebuffer behavior |
+| Input | Partial | Phone keys, pointer input, and a touch controller are mapped to two gamepads; WASM-4 exposes four gamepad registers |
+| Audio | Device-dependent | The `tone` API, four logical channels, sampled output, streamed MIDI compatibility output, and `playTone` fallback are implemented, but timing and waveform fidelity depend on MMAPI |
+| Disk | Supported | The 1 KiB WASM-4 disk is persisted per cartridge through checksummed RMS generations |
+| Cartridge loading | Supported | Bundled resources, HTTP(S), RMS, URLs, and optional JSR-75 files; cartridge files are limited to 64 KiB |
+| Linear memory | Restricted | One fixed 64 KiB memory; memory growth and multiple memories are not supported |
+| Frame timing | Device-dependent | The interpreter has no JIT and cannot guarantee the reference runtime's 60 Hz update rate on every cartridge |
+| WebAssembly extensions | Partial | Numeric conversions, bulk memory, passive data, `i64`, `f32`, `f64`, and tables are supported; threads, SIMD, and broader reference types are not |
+
+## Tested environments
+
+| Environment | Role | Confirmed behavior | Boundary |
+| --- | --- | --- | --- |
+| Nokia E71 | Physical-device usability | Launcher, keypad input, multiple bundled cartridges, and short sound effects | Continuous music stutters in the current release; a complete cartridge-by-cartridge physical-device pass has not been recorded |
+| KEmulator | MIDP integration | LCDUI, Canvas, touch, RMS, JSR-75, installation, settings, and audio lifecycle scenarios | Desktop timing and audio output are not evidence of physical-phone performance or fidelity |
+| Host JVM | Deterministic correctness | Exact framebuffer, input, disk, memory, globals, and tone-event replay where an oracle exists | Not a Java ME performance measurement |
+| Native i686 phoneME | No-JIT interpreter verification | Exact route parity and paired timing for the maintained benchmark corpus when the optional local rig is available | It does not exercise a handset display, keypad, or MMAPI implementation |
+
 ## Runtime
 
 The runtime currently provides:
@@ -74,6 +98,29 @@ The per-turn figures are recorded in
 [performance documentation](performance.md) as a standing interpreter
 optimization target.
 
+## Cartridge verification
+
+Release cartridges remain byte-for-byte copies of their published upstream
+files. Their sources, licenses, and SHA-256 hashes are listed in
+[`THIRD_PARTY_NOTICES.md`](../THIRD_PARTY_NOTICES.md).
+
+The automated suite currently provides these cartridge-level checks:
+
+| Cartridge | Automated evidence | Physical-device evidence |
+| --- | --- | --- |
+| Duck Maze | Scripted level-one framebuffer oracle | Observed playable on Nokia E71 |
+| Waternet | 94-frame replay with exact framebuffer, input, tone-event, and disk checks | Gameplay and short effects work on Nokia E71; continuous music stutters |
+| Rubido | 70-frame replay with exact framebuffer, input, tone-event, and disk checks | Not recorded |
+| Untangle | 401-frame replay with exact framebuffer, input, tone-event, and disk checks | Not recorded |
+| Plasma Cube | 60-frame exact differential run | Launch observed on Nokia E71, but it is a stress workload rather than a performance target |
+| Game of Life: Zig Edition | One full exact differential frame | Test-only workload; not suitable for interactive use on the tested handset |
+
+Known negative cases are retained rather than hidden: Glowfish Chess `VS CPU`
+can exceed the per-frame instruction budget, while its `VS Player` mode avoids
+the engine and remains usable. Mandelbrot, Tankle, and Game of Life: Zig Edition
+remain test and benchmark fixtures instead of release-library entries because
+their frame cost is unsuitable for the current physical-device target.
+
 ## Per-frame instruction budget
 
 Every `update()` call is capped at 150,000,000 executed WebAssembly
@@ -119,7 +166,9 @@ framebuffer whenever the screen provides enough space.
 
 - Performance depends heavily on the handset VM. Computationally expensive
   cartridges may not reach interactive frame rates on physical devices.
-- Sampled MMAPI behavior and latency vary between phone implementations.
+- Sampled MMAPI behavior and latency vary between phone implementations. On the
+  tested Nokia E71, short sound effects are audible, but continuous music
+  stutters and is not timing-compatible with the reference runtime.
 - Automatic audio uses sampled WAV Players only when MMAPI reports both WAV
   and mixing support, then falls back through a data-backed `audio/midi`
   Player, `Manager.playTone`, and silence as each tier proves unavailable.

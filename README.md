@@ -66,7 +66,8 @@ Further `.wasm` files can be installed from the device.
 - thirteen bundled cartridges plus HTTP(S), RMS, URL, and optional JSR-75 loading;
 - phone keys, keyboard controls, pointer input, and an on-screen touch pad;
 - per-cartridge persistent disk storage with checksummed RMS generations;
-- sampled MMAPI audio with streamed MIDI, `playTone`, and silent fallbacks;
+- device-dependent MMAPI audio with streamed MIDI, `playTone`, and silent
+  fallbacks;
 - global RMS-backed sound On/Off and master-volume controls;
 - deterministic host, KEmulator, and optional phoneME verification.
 
@@ -130,6 +131,10 @@ enough.
 command menu. It contains Automatic/Compatible audio mode, a hard global
 Sound On/Off mute, and master volume when the backend supports it. Confirmed
 settings persist across MIDlet restarts.
+
+On the tested Nokia E71, short sound effects work, but continuous music
+stutters. Audio timing and fidelity remain device-dependent; see
+[Compatibility](docs/compatibility.md).
 
 ## Loading cartridges
 

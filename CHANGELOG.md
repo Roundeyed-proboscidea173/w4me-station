@@ -26,8 +26,9 @@ Java 1.3-compatible bytecode.
   stress workload, not a representative first cartridge.
 - Glowfish Chess is practical in its two-player mode; its CPU opponent can
   exceed the per-frame instruction budget on current hardware.
-- MMAPI implementations vary. `Compatible` audio mode is available for phones
-  that cannot sustain the automatic backend.
+- MMAPI implementations vary. On the tested Nokia E71, short sound effects
+  work, but continuous music stutters. `Compatible` audio mode changes the
+  backend path but does not guarantee gapless playback.
 - Save-state slots, Bluetooth play, and the workshop catalog are not part of
   1.0.0.
 - Physical-device coverage is limited and will be documented per handset as
