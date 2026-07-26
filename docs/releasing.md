@@ -8,7 +8,7 @@ Before publishing:
   from the source tree and complete public history;
 - confirm that intermediate build output and emulator state are ignored;
 - confirm that the checked-in `dist/` artifacts match a fresh `just release`;
-- confirm that README download links target the immutable versioned release
+- confirm that README download links target the versioned release
   assets rather than files from `main`;
 - review `LICENSE`, `THIRD_PARTY_NOTICES.md`, `SECURITY.md`, and
   `CONTRIBUTING.md`;

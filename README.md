@@ -29,7 +29,7 @@ below 300 KB.
 
 [Release notes](https://github.com/mulfyx/w4me-station/releases/tag/v1.0.0)
 and [SHA-256 checksums](https://github.com/mulfyx/w4me-station/releases/download/v1.0.0/SHA256SUMS)
-are stored beside the immutable version `1.0.0` artifacts.
+are stored beside the versioned `1.0.0` artifacts.
 
 W4ME Station targets CLDC 1.1 / MIDP 2.0 devices. It is independent from and not
 endorsed by the WASM-4 maintainers.
