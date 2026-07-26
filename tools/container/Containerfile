@@ -1,5 +1,5 @@
 # W4ME Station development environment. Build with:
-#   podman build -t wasm-4-for-j2me tools/container/
+#   podman build -t w4me-station tools/container/
 FROM registry.fedoraproject.org/fedora:44
 
 RUN dnf -y install --setopt=install_weak_deps=False \
@@ -104,4 +104,4 @@ RUN printf '%s\n' \
     'export CLDC_API_JAR=/opt/j2me-api/cldcapi11-2.0.4.jar' \
     'export MIDP_API_STUB_JAR=/opt/j2me-api/midpapi20-2.0.4.jar' \
     'export PATH=/opt/rust/cargo/bin:/opt/jdk8/bin:/opt/proguard/bin:$PATH' \
-    > /etc/profile.d/wasm-4-for-j2me-toolchain.sh
+    > /etc/profile.d/w4me-station-toolchain.sh

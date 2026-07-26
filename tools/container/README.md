@@ -1,6 +1,6 @@
 # WASM-4 for J2ME toolchain distrobox
 
-The `wasm-4-for-j2me` distrobox is the canonical environment for project
+The `w4me-station` distrobox is the canonical environment for project
 commands. It pins JDK 8, KEmulator, Rust, and supporting tools.
 
 ## Setup

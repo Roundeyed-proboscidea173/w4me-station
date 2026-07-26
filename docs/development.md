@@ -27,7 +27,7 @@ just setup
 just doctor
 ```
 
-Project scripts automatically re-enter the `wasm-4-for-j2me` distrobox when
+Project scripts automatically re-enter the `w4me-station` distrobox when
 they need the pinned Java ME toolchain.
 
 ## Common commands

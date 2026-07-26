@@ -26,9 +26,23 @@ endorsed by the WASM-4 maintainers.
 
 ## Cartridge library
 
-Sokoban, Wasm Wars, Annoying Robots, Waternet, Dragon Poker Draw, Tic Tac Toe,
-Watris, Glowfish Chess, Duck Maze, Rubido, Untangle, Sound Demo, and Plasma
-Cube. Further `.wasm` files can be installed from the device.
+| # | Cartridge |
+| ---: | --- |
+| 1 | [Sokoban](https://wasm4.org/play/sokoban/) |
+| 2 | [Wasm Wars](https://wasm4.org/play/wasm-wars/) |
+| 3 | [Annoying Robots](https://wasm4.org/play/annoyingrobots/) |
+| 4 | [Waternet](https://wasm4.org/play/waternet/) |
+| 5 | [Dragon Poker Draw](https://wasm4.org/play/dragon-poker-draw/) |
+| 6 | [Tic Tac Toe](https://wasm4.org/play/tictactoe/) |
+| 7 | [Watris](https://wasm4.org/play/watris/) |
+| 8 | [Glowfish Chess](https://wasm4.org/play/glowfish-chess/) |
+| 9 | [Duck Maze](https://wasm4.org/play/duck-maze/) |
+| 10 | [Rubido](https://wasm4.org/play/rubido/) |
+| 11 | [Untangle](https://wasm4.org/play/untangle/) |
+| 12 | [Sound Demo](https://wasm4.org/play/sound-demo/) |
+| 13 | [Plasma Cube](https://wasm4.org/play/plasma-cube/) |
+
+Further `.wasm` files can be installed from the device.
 
 <p align="center">
   <img src="docs/media/sokoban.jpg" alt="Sokoban running on a Nokia E71" width="31%">
@@ -111,9 +125,7 @@ settings persist across MIDlet restarts.
 
 ## Loading cartridges
 
-The launcher includes Sokoban, Wasm Wars, Annoying Robots, Waternet, Dragon
-Poker Draw, Tic Tac Toe, Watris, Glowfish Chess, Duck Maze, Rubido, Untangle,
-Sound Demo, and Plasma Cube, in that order.
+The launcher includes the thirteen cartridges listed above, in that order.
 
 Additional `.wasm` files can be installed from HTTP(S), entered as a `file://`
 URL, or selected with the JSR-75 browser on supported devices. Installed

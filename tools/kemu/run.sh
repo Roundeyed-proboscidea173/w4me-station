@@ -49,7 +49,7 @@ cmd_session() {
     # bundle. The automation controller needs a persistent X display even in
     # headless mode.
 
-    SESSION_DIR="/tmp/wasm-4-for-j2me-kemu-session"
+    SESSION_DIR="/tmp/w4me-station-kemu-session"
     RUN_DIR="${SESSION_DIR}/kemu"
     XVFB_PID_FILE="${SESSION_DIR}/xvfb.pid"
     DISPLAY_NUM="${KEMU_DISPLAY:-:98}"
@@ -180,14 +180,14 @@ cmd_cpu_quota() {
         printf 'usage: %s PERCENT COMMAND [ARG ...]\n' "$0" >&2
         exit 2
     fi
-    if [ "${CONTAINER_ID:-}" = "wasm-4-for-j2me" ]; then
+    if [ "${CONTAINER_ID:-}" = "w4me-station" ]; then
         exec distrobox-host-exec env -u CONTAINER_ID "$0" "$@"
     fi
 
     quota_percent="$1"
     shift
     quota_period_us="${KEMU_CPU_PERIOD_US:-20000}"
-    container_name="${KEMU_CONTAINER_NAME:-wasm-4-for-j2me}"
+    container_name="${KEMU_CONTAINER_NAME:-w4me-station}"
 
     if ! [[ "${quota_percent}" =~ ^[0-9]+$ ]] ||
         [ "${quota_percent}" -lt 5 ] ||

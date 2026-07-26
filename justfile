@@ -5,8 +5,8 @@ default:
 
 # Build the project toolchain image and create the project distrobox.
 setup:
-    podman build -t wasm-4-for-j2me tools/container/
-    distrobox create --name wasm-4-for-j2me --image localhost/wasm-4-for-j2me:latest
+    podman build -t w4me-station tools/container/
+    distrobox create --name w4me-station --image localhost/w4me-station:latest
 
 # Print and validate every required development tool.
 doctor:

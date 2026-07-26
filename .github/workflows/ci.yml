@@ -30,7 +30,7 @@ jobs:
       - name: Test and build release artifacts
         run: |
           docker run --rm \
-            -e CONTAINER_ID=wasm-4-for-j2me \
+            -e CONTAINER_ID=w4me-station \
             -v "$PWD:/workspace" \
             -w /workspace \
             w4me-toolchain:ci \
