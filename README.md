@@ -1,7 +1,16 @@
 # W4ME Station
 
-A WebAssembly interpreter written for Java 1.3 that runs unmodified
-[WASM-4](https://wasm4.org/) cartridges on phones from the mid 2000s.
+**Run [WASM-4](https://wasm4.org/) games on Java ME phones.**
+
+W4ME Station brings unmodified WebAssembly cartridges to CLDC 1.1 / MIDP 2.0
+devices, including feature phones from the mid 2000s.
+
+<p>
+  <a href="https://github.com/mulfyx/w4me-station/actions/workflows/ci.yml"><img src="https://github.com/mulfyx/w4me-station/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <img src="https://img.shields.io/badge/Java_ME-CLDC_1.1_%2F_MIDP_2.0-ED8B00" alt="Java ME: CLDC 1.1 / MIDP 2.0">
+  <img src="https://img.shields.io/badge/release-1.0.0-blue" alt="Release 1.0.0">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="MIT License"></a>
+</p>
 
 <p align="center">
   <img src="docs/media/hero-phone.jpg" alt="W4ME Station running on a Nokia E71" width="680">
