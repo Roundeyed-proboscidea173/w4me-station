@@ -960,10 +960,14 @@ public final class WasmInterpreter {
                     break;
                 case 0x1b:
                 case 0x1c:
-                    int selectCondition = popI32();
-                    long second = pop();
-                    long first = pop();
-                    push(selectCondition != 0 ? first : second);
+                    if (valueTop < 3) {
+                        throw new WasmTrap("value stack underflow");
+                    }
+                    int genericSelectCondition = (int) values[--valueTop];
+                    long genericSelectSecond = values[--valueTop];
+                    if (genericSelectCondition == 0) {
+                        values[valueTop - 1] = genericSelectSecond;
+                    }
                     pc++;
                     break;
                 case 0x20:
@@ -1007,7 +1011,20 @@ public final class WasmInterpreter {
                     pc++;
                     break;
                 case 0x2d:
-                    pushI32(module.memory[address(operand, 1)] & 0xff);
+                    if (valueTop <= 0) {
+                        throw new WasmTrap("value stack underflow");
+                    }
+                    int genericLoad8Base = (int) values[--valueTop];
+                    byte[] genericLoad8Memory = module.memory;
+                    int genericLoad8MaximumBase = genericLoad8Memory.length - 1;
+                    if (genericLoad8Base < 0
+                            || operand < 0
+                            || genericLoad8Base > genericLoad8MaximumBase
+                            || operand > genericLoad8MaximumBase - genericLoad8Base) {
+                        throw new WasmTrap("out-of-bounds memory access");
+                    }
+                    values[valueTop++] =
+                            genericLoad8Memory[genericLoad8Base + operand] & 0xff;
                     pc++;
                     break;
                 case 0x2e:
@@ -1199,8 +1216,12 @@ public final class WasmInterpreter {
                     pc++;
                     break;
                 case 0x6b:
-                    int i32SubRight = popI32();
-                    pushI32(popI32() - i32SubRight);
+                    if (valueTop < 2) {
+                        throw new WasmTrap("value stack underflow");
+                    }
+                    int genericSubtractRight = (int) values[--valueTop];
+                    values[valueTop - 1] =
+                            (int) values[valueTop - 1] - genericSubtractRight;
                     pc++;
                     break;
                 case 0x6c:
@@ -1219,7 +1240,12 @@ public final class WasmInterpreter {
                     pc++;
                     break;
                 case 0x72:
-                    pushI32(popI32Second() | popI32First());
+                    if (valueTop < 2) {
+                        throw new WasmTrap("value stack underflow");
+                    }
+                    int genericOrRight = (int) values[--valueTop];
+                    values[valueTop - 1] =
+                            (int) values[valueTop - 1] | genericOrRight;
                     pc++;
                     break;
                 case 0x73:
@@ -1227,8 +1253,13 @@ public final class WasmInterpreter {
                     pc++;
                     break;
                 case 0x74:
-                    int i32Shift = popI32();
-                    pushI32(popI32() << (i32Shift & 31));
+                    if (valueTop < 2) {
+                        throw new WasmTrap("value stack underflow");
+                    }
+                    int genericShiftLeft = (int) values[--valueTop];
+                    values[valueTop - 1] =
+                            (int) values[valueTop - 1]
+                                    << (genericShiftLeft & 31);
                     pc++;
                     break;
                 case 0x75:
@@ -2564,34 +2595,69 @@ public final class WasmInterpreter {
                     pushI32(popI32() == 0 ? 1 : 0);
                     break;
                 case 0x46:
-                    compareI32(0);
-                    break;
                 case 0x47:
-                    compareI32(1);
-                    break;
                 case 0x48:
-                    compareI32(2);
-                    break;
                 case 0x49:
-                    compareI32(3);
-                    break;
                 case 0x4a:
-                    compareI32(4);
-                    break;
                 case 0x4b:
-                    compareI32(5);
-                    break;
                 case 0x4c:
-                    compareI32(6);
-                    break;
                 case 0x4d:
-                    compareI32(7);
-                    break;
                 case 0x4e:
-                    compareI32(8);
-                    break;
                 case 0x4f:
-                    compareI32(9);
+                    if (valueTop < 2) {
+                        throw new WasmTrap("value stack underflow");
+                    }
+                    int compactI32Right = (int) values[--valueTop];
+                    int compactI32Left = (int) values[valueTop - 1];
+                    boolean compactI32Comparison;
+                    switch (opcode) {
+                        case 0x46:
+                            compactI32Comparison =
+                                    compactI32Left == compactI32Right;
+                            break;
+                        case 0x47:
+                            compactI32Comparison =
+                                    compactI32Left != compactI32Right;
+                            break;
+                        case 0x48:
+                            compactI32Comparison =
+                                    compactI32Left < compactI32Right;
+                            break;
+                        case 0x49:
+                            compactI32Comparison =
+                                    (compactI32Left & 0xffffffffL)
+                                            < (compactI32Right & 0xffffffffL);
+                            break;
+                        case 0x4a:
+                            compactI32Comparison =
+                                    compactI32Left > compactI32Right;
+                            break;
+                        case 0x4b:
+                            compactI32Comparison =
+                                    (compactI32Left & 0xffffffffL)
+                                            > (compactI32Right & 0xffffffffL);
+                            break;
+                        case 0x4c:
+                            compactI32Comparison =
+                                    compactI32Left <= compactI32Right;
+                            break;
+                        case 0x4d:
+                            compactI32Comparison =
+                                    (compactI32Left & 0xffffffffL)
+                                            <= (compactI32Right & 0xffffffffL);
+                            break;
+                        case 0x4e:
+                            compactI32Comparison =
+                                    compactI32Left >= compactI32Right;
+                            break;
+                        default:
+                            compactI32Comparison =
+                                    (compactI32Left & 0xffffffffL)
+                                            >= (compactI32Right & 0xffffffffL);
+                            break;
+                    }
+                    values[valueTop - 1] =
+                            compactI32Comparison ? 1 : 0;
                     break;
                 case 0x5d:
                 case 0x5e:
