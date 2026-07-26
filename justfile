@@ -12,6 +12,10 @@ setup:
 doctor:
     ./tools/toolchain.sh
 
+# Check every project shell script without rewriting it.
+lint:
+    ./tools/lint.sh
+
 # Build both CLDC 1.1 / MIDP 2.0 release variants with Java 1.3 bytecode.
 build:
     ./tools/build.sh
@@ -21,7 +25,7 @@ test:
     ./tools/test.sh
 
 # Run the complete local correctness gate, including release JAR validation.
-verify: test build
+verify: lint test build
     ./tools/verify.sh counterless
 
 # Build and open the station in KEmulator.

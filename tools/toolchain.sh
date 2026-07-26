@@ -9,13 +9,10 @@ source "${ROOT_DIR}/tools/container/env.sh"
 printf 'container: %s\n' "${CONTAINER_ID}"
 java -version
 javac -version
-rustc --version
-cargo --version
-node --version
-npm --version
 python3 --version
 wasm2wat --version
 wasm-validate --version
+strings --version | sed -n '1p'
 unzip -p "${PROGUARD_HOME}/lib/proguard.jar" META-INF/MANIFEST.MF |
     sed -n 's/^Implementation-Version: /ProGuard /p'
 just --version

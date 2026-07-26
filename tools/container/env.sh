@@ -12,9 +12,7 @@ if [ "${CONTAINER_ID:-}" != "w4me-station" ]; then
 fi
 
 # Keep host-installed tools out of project commands.
-export PATH="/opt/rust/cargo/bin:/opt/jdk8/bin:/opt/proguard/bin:/usr/local/bin:/usr/bin:/bin"
-export RUSTUP_HOME="/opt/rust/rustup"
-export CARGO_HOME="${HOME}/.cache/w4me-station/cargo"
+export PATH="/opt/jdk8/bin:/opt/proguard/bin:/usr/local/bin:/usr/bin:/bin"
 
 export JAVA_HOME="/opt/jdk8"
 export JDK8_HOME="/opt/jdk8"

@@ -76,9 +76,8 @@ are documented in [Compatibility](docs/compatibility.md).
 ## Requirements
 
 Development requires Linux with `just`, Podman, and Distrobox installed. The
-project toolchain contains JDK 8, ProGuard, KEmulator, WABT, Rust, Node.js, and
-supporting utilities. Version-sensitive components are pinned by the container
-definition.
+project toolchain contains JDK 8, ProGuard, KEmulator, WABT, and supporting
+utilities. Version-sensitive components are pinned by the container definition.
 
 ```sh
 just setup

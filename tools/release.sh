@@ -3,6 +3,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 
+"${ROOT_DIR}/tools/lint.sh"
 "${ROOT_DIR}/tools/test.sh"
 "${ROOT_DIR}/tools/build.sh"
 "${ROOT_DIR}/tools/verify.sh" counterless

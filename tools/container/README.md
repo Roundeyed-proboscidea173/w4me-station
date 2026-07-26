@@ -1,7 +1,7 @@
 # WASM-4 for J2ME toolchain distrobox
 
 The `w4me-station` distrobox is the canonical environment for project
-commands. It pins JDK 8, KEmulator, Rust, and supporting tools.
+commands. It pins JDK 8, KEmulator, and supporting tools.
 
 ## Setup
 
@@ -54,7 +54,12 @@ tools/kemu/run.sh session stop
 | ProGuard | `7.0.1`, Java ME `StackMap` preverification |
 | CLDC/MIDP API lint | MicroEmulator `cldcapi11:2.0.4` and `midpapi20:2.0.4` LGPL build-time stubs, checksum-pinned |
 | KEmulator | `mulfyx/KEmulator` commit `73ba4b14b8c2` in `/opt/kemu` |
-| Rust | `1.96.0` with `rustfmt`, `clippy`, and `wasm32-unknown-unknown` |
 | WABT | Fedora 44 package (`wasm2wat`, `wasm-objdump`, `wasm-validate`) |
-| Taplo CLI | `0.7.0` |
-| Node.js, npm, Python | Fedora 44 packages |
+| Python, binutils, ShellCheck, shfmt | Fedora 44 packages |
+
+Fedora 44 delegates standard image decoding away from the legacy GDK Pixbuf
+module interface used by KEmulator's SWT build. The container includes the
+small XPM loader and replaces KEmulator's window icon with
+`tools/container/kemu-icon.xpm`, generated from the project's MIT-licensed
+MIDlet icon. This keeps the pinned emulator launchable without adding image
+conversion tools to the development environment.

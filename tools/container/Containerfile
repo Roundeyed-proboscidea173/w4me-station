@@ -3,17 +3,15 @@
 FROM registry.fedoraproject.org/fedora:44
 
 RUN dnf -y install --setopt=install_weak_deps=False \
-    gcc gcc-c++ make git findutils which file tar xz zip unzip wabt \
-    nodejs npm \
+    binutils git-core findutils tar gzip zip unzip wabt \
     python3 \
     just \
     ShellCheck shfmt \
-    pkgconf-pkg-config \
     && dnf clean all
 
-# Native build dependencies plus the virtual display used by KEmulator.
+# Graphics, audio, input, and virtual-display runtime used by KEmulator.
 RUN dnf -y install --setopt=install_weak_deps=False \
-    libX11-devel libXi-devel mesa-libGL-devel alsa-lib-devel \
+    libX11 libXi mesa-libGL alsa-lib \
     libxkbcommon libxkbcommon-x11 \
     xorg-x11-server-Xvfb mesa-dri-drivers \
     && dnf clean all
@@ -21,16 +19,8 @@ RUN dnf -y install --setopt=install_weak_deps=False \
 # KEmulator uses SWT/GTK3 and AWT; fonts keep headless screenshots stable.
 RUN dnf -y install --setopt=install_weak_deps=False \
     gtk3 libXrender libXtst dejavu-sans-fonts \
+    gdk-pixbuf2-modules-extra \
     && dnf clean all
-
-# Audio conversion tools for J2ME MIDI/audio work.
-RUN dnf -y install --setopt=install_weak_deps=False \
-    fluidsynth-2.5.4 \
-    vorbis-tools-1.4.3 \
-    musescore-soundfont-0.2.0 \
-    && dnf clean all
-
-RUN npm install -g @taplo/cli@0.7.0
 
 # Temurin JDK 8, pinned to an exact release and verified checksum. JDK 8 is
 # used both for legacy-compatible Java builds and KEmulator.
@@ -75,33 +65,25 @@ RUN cldc_api_url='https://repo.maven.apache.org/maven2/org/microemu/cldcapi11/2.
 # KEmulator automation CLI pinned to an exact revision. The bundle includes
 # KEmulator.jar, MIDP APIs, and kemu.sh.
 ENV KEMU_HOME=/opt/kemu
+COPY tools/container/kemu-icon.xpm /tmp/kemu-icon/res/icon
 RUN kemu_commit='73ba4b14b8c2' \
     && git clone --filter=blob:none 'https://github.com/mulfyx/KEmulator.git' /tmp/kemu-src \
     && git -C /tmp/kemu-src checkout "${kemu_commit}" \
     && cd /tmp/kemu-src \
     && JAVA_HOME=/opt/jdk8 PATH="/opt/jdk8/bin:$PATH" ./build-release.sh /opt/kemu \
+    && (cd /tmp/kemu-icon && /opt/jdk8/bin/jar uf /opt/kemu/KEmulator.jar res/icon) \
     && rm -rf /tmp/kemu-src \
+    && rm -rf /tmp/kemu-icon \
     && chmod -R a+rX /opt/kemu
 
-# Rust is retained from the source environment for WASM-4 runtime/reference
-# tooling and cartridge builds, including the bare wasm32 target.
-ENV RUSTUP_HOME=/opt/rust/rustup
-RUN curl -Ls 'https://sh.rustup.rs' -o /tmp/rustup.sh \
-    && CARGO_HOME=/opt/rust/cargo sh /tmp/rustup.sh -y --no-modify-path --profile minimal \
-        --default-toolchain 1.96.0 --component rustfmt --component clippy \
-    && rm /tmp/rustup.sh \
-    && CARGO_HOME=/opt/rust/cargo RUSTUP_HOME=/opt/rust/rustup \
-        /opt/rust/cargo/bin/rustup target add wasm32-unknown-unknown \
-    && chmod -R a+rX /opt/rust
-ENV PATH=/opt/rust/cargo/bin:/opt/jdk8/bin:/opt/proguard/bin:$PATH
+ENV PATH=/opt/jdk8/bin:/opt/proguard/bin:$PATH
 
 RUN printf '%s\n' \
-    'export RUSTUP_HOME=/opt/rust/rustup' \
     'export JAVA_HOME=/opt/jdk8' \
     'export JDK8_HOME=/opt/jdk8' \
     'export KEMU_HOME=/opt/kemu' \
     'export PROGUARD_HOME=/opt/proguard' \
     'export CLDC_API_JAR=/opt/j2me-api/cldcapi11-2.0.4.jar' \
     'export MIDP_API_STUB_JAR=/opt/j2me-api/midpapi20-2.0.4.jar' \
-    'export PATH=/opt/rust/cargo/bin:/opt/jdk8/bin:/opt/proguard/bin:$PATH' \
+    'export PATH=/opt/jdk8/bin:/opt/proguard/bin:$PATH' \
     > /etc/profile.d/w4me-station-toolchain.sh
