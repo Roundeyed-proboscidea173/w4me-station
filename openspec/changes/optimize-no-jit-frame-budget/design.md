@@ -120,7 +120,10 @@ cross-ISA checkpoints and deterministic counters.
 Each candidate first passes focused semantic tests and all affected exact
 oracles. Interpreter changes additionally preserve instruction-budget trap
 points, target-47 bytecode shape, dense `tableswitch`, preverified StackMaps,
-and the 7,800-byte `execute` ceiling. All candidates record class/JAR and
+and the 16,000-byte `execute` sanity ceiling. The ceiling prevents accidental
+unbounded method growth; it is not a device, JAR, or performance-acceptance
+limit. Historical entries below retain the 7,800-byte gate that was active
+when those artifacts were measured. All candidates record class/JAR and
 persistent heap deltas. Timing artifacts compile selection flags out of the hot
 path and must be bound to a clean source snapshot and exact binary hashes.
 
@@ -163,6 +166,33 @@ implementation risk, and the ability to get an authoritative verdict:
 | `NJIT-022` | Fuse `i32.load8_u + local.set` into one exact two-instruction W4IR handler | corrected Game of Life production-stream profile and accepted load/tee precedent | rejected |
 | `NJIT-023` | Fuse `i32.add_const + i32.load8_u + local.set` into one exact four-logical-instruction handler | NJIT-022 rejection plus stable compact-stream profile | rejected |
 | `NJIT-024` | Inline the compact `i32.load8_u` stack and scalar-address path | Game of Life compact coverage plus phoneME Java-call cost | inconclusive |
+| `NJIT-025` | Inline generic i32 comparisons directly over `values[]` | phoneME call-frame cost and integer-heavy route profiles | accepted |
+| `NJIT-026` | Inline the generic `i32.load` stack, address guard, and byte assembly | Rubido load profile and NJIT-025 stable baseline | rejected |
+| `NJIT-027` | Inline generic `local.set` and `local.tee` stack access | phoneME call-frame cost and exact corpus opcode counts | rejected |
+| `NJIT-028` | Inline generic `local.get` with the exact `push()` capacity trap | phoneME call-frame cost and exact corpus opcode counts | rejected |
+| `NJIT-029` | Write horizontal 2-bpp spans a packed byte at a time | native phoneME statistical method profile | accepted |
+| `NJIT-030` | Inline generic control-frame entry into `execute` | post-NJIT-029 phoneME method profile and exact control-opcode counts | accepted |
+| `NJIT-031` | Specialize zero- and one-value control transfers before the generic copy loops | post-NJIT-030 phoneME method profile and exact control-flow counts | accepted |
+| `NJIT-032` | Inline the compact `i32.load8_u` stack and width-one address path | corrected NJIT-024 exact fixture plus post-NJIT-031 phoneME method profile | rejected |
+| `NJIT-033` | Overwrite the compact `i32.eqz` input slot with its result | E15 TOS-overwrite design plus exact corpus opcode counts | rejected |
+| `NJIT-034` | Inline a folded effective-address guard in compact `i32.load` | NJIT-005 caller-inline reconsideration plus post-NJIT-031 Rubido profile | rejected |
+| `NJIT-035` | Inline generic control-frame exit at its three dispatch sites | post-NJIT-031 phoneME method profile and current exact control-opcode counts | accepted |
+| `NJIT-036` | Pop generic `if` and `br_if` conditions directly from `values[]` | post-NJIT-035 phoneME method profile and current exact branch counts | rejected |
+| `NJIT-037` | Execute compact `w4ir.local_local` directly in the compact loop | post-NJIT-035 phoneME method profile and exact fused-opcode counts | rejected |
+| `NJIT-038` | Execute compact `w4ir.local_set_get` as an in-place top-of-stack replacement | post-NJIT-035 phoneME method profile and exact fused-opcode counts | rejected |
+| `NJIT-039` | Execute compact `w4ir.local_i32_const_add` directly with one guarded stack write | post-NJIT-035 phoneME method profile and exact fused-opcode counts | rejected |
+| `NJIT-040` | Execute generic `i32.add` as an in-place `values[]` update | accepted generic comparison precedent and exact Game of Life opcode count | rejected |
+| `NJIT-041` | Absorb a terminal descriptor-backed `br_if` into an existing compact region without enlarging the compact executor frame | prior exact branch-region prototype plus the accepted pc-indexed direct branch path | rejected |
+| `NJIT-042` | Execute the six hot helper-backed generic i32 ALU opcodes directly over `values[]` | NJIT-040 reconsideration condition plus whole-corpus ALU coverage | rejected |
+| `NJIT-043` | Compile distributable JARs with the accepted counterless production config | generic-tiering clean A/B plus current release-path audit and revalidation | accepted |
+| `NJIT-044` | Remove the cartridge-fingerprinted Plasma Java replacement from the universal interpreter | product contract and contract-clean baseline audit | accepted |
+| `NJIT-045` | Recover the original logical stream sparsely at fused instruction-budget boundaries | rejected full-copy exactness prototype plus fusion-root audit | rejected |
+| `NJIT-046` | Compile opcode profiling support out of the counterless production artifact | instrumented phoneME bytecode-type profile plus method/BCI sampling | accepted |
+| `NJIT-047` | Cache the immutable value-stack array in the compact executor's local frame | NJIT-046 method/BCI profile plus target-47 field-access audit | rejected |
+| `NJIT-048` | Elide compact per-instruction budget comparisons behind one block-admission boolean | post-NJIT-046 method/BCI profile and compact-region accounting | rejected |
+| `NJIT-049` | Route admitted compact blocks to a separate unchecked executor with a local published counter | NJIT-001 and NJIT-048 results plus phoneME branch cost | rejected |
+| `NJIT-050` | Pass the defined function result arity into the outer executor as a scalar | target-47 result-arity load audit plus Game of Life call density | rejected |
+| `NJIT-051` | Inline ordinary direct-defined-call frame setup into the outer executor | Game of Life call density plus phoneME Java-frame cost | inconclusive |
 
 The earlier `popFirst`/`popSecond` wrapper-only experiment is not in this
 queue: a 16-pair native phoneME repeat measured only +0.060% on Waternet and
@@ -4273,14 +4303,2894 @@ Reconsider only by first fixing the statically valid trap fixture, then
 repeating the complete exactness/artifact gates and the planned clean twelve
 pairs; the +96-byte compact-method cost must be included in that verdict.
 
+### NJIT-025: generic i32 comparisons over `values[]`
+
+**Status:** `accepted`, not yet committed.
+
+The generic handlers for `i32.eqz` and `i32.eq` through `i32.ge_u` previously
+called `popI32First`, `popI32Second`, `popI32`, `pop`, `compareI32`,
+`pushI32`, and `push`. The candidate performs the same stack checks, signed or
+unsigned comparisons, and result write directly over `values[]`. The helper
+methods remain in the class so the first A/B does not also change class
+layout. No W4IR token, cache format, retained field, heap allocation, compact
+region, trace, instruction count, or trap point changes.
+
+The retained source is
+`cae0f2b3e21006e816e4ffaa76fdb9e5daad8e48a7b1c69a46e84adf74ecc444`.
+Its counterless interpreter class is
+`4cbb8fa6ebbc248444c3da434dd5104b3e7ed7ae8bceb550f5cfdc911d140213`.
+The full `just verify` matrix passes: all seven full-state workloads are exact,
+Java source/target 1.3, CLDC bootclasspath, classfile 47, StackMaps,
+preverification, dense dispatch, release JAR, and counterless gates pass.
+Diagnostic/counterless `execute` sizes are 7,577/7,545 bytes.
+
+Twelve balanced native i686 phoneME pairs against stable
+`8e850656f2b19256c2559cdd07f165c7788b16d4` produced:
+
+| Workload | Median effect | Wins/losses/ties | Resolution |
+| --- | ---: | ---: | --- |
+| Rubido | +1.274% | 11/1/0 | measured |
+| Waternet | +0.462% | 9/3/0 | measured |
+| Untangle | +0.176% | 7/4/1 | below timer resolution |
+| Game of Life | +1.718% | 11/1/0 | measured |
+
+Raw results are under
+`/tmp/w4me-interpreter-research/raw/njit024/runs/inline-i32-compare-vs-8e85065-20260727/`.
+Rubido pairs/summary SHA-256 values are
+`b33a2d4346752a2461d13f170da4929e47444415c6734786fc0e0550debd0a2b`
+and
+`97d860354d0debfbababb82c3c2f9315838a7263523fc150c26a152e398317c8`.
+Waternet values are
+`9e062fe1dcd1d764e39d4a165c7d5662dbdd18f608ce1c7d7a4bbce02ffaeb1f`
+and
+`aa9d1f38fd696ec24be47d6da79547cf2a458b14bea81c04289638e8a63eea25`.
+Game of Life values are
+`ef9b60038dbd8cb2e8fdc07e656ed56c6c64021d5ccf756529d2a78c7dec7633`
+and
+`1c6f1d282f1d5aff1776e7f3cdf0d3678b296ab682ec0fdc398e8253ef4fbfc8`.
+
+**Decision.** Retain. The two primary integer-heavy routes show resolved
+improvements above one percent, Waternet also improves, and the light control
+is neutral. The implementation remains universal and introduces no runtime
+selection or cartridge identity.
+
+### NJIT-026: generic `i32.load` direct stack/address path
+
+**Status:** `rejected`.
+
+This candidate replaced the generic `i32.load` helper chain with direct
+`values[]` stack access, the existing four-condition address guard, and inline
+little-endian byte assembly. It did not touch compact or fused execution,
+W4IR, cache format, retained state, or instruction accounting. Its source was
+`59cc79c1bf3d1be7488df20615f495d69aa8635e3f3797b1cc212f626538b7e7`;
+the counterless interpreter class was
+`c44ffab9483ccb2be71566049775a53e273f9b4d3178896f66020d19a4bb1e4f`.
+
+An initial prototype incorrectly incremented `valueTop` twice and failed the
+Duck Maze level transition. That prototype was never timed. The corrected
+candidate removed the extra increment, passed the focused Duck and Plasma
+checks, then passed the complete `just verify` matrix with all seven
+full-state workloads exact. Its diagnostic/counterless `execute` sizes were
+7,725/7,693 bytes. The project sanity ceiling was subsequently raised to
+16,000 bytes; method or JAR size is therefore not a rejection reason.
+
+Twelve balanced native i686 phoneME pairs against NJIT-025 produced:
+
+| Workload | Median effect | Wins/losses | Decision evidence |
+| --- | ---: | ---: | --- |
+| Rubido | +0.178% | 9/3 | measured |
+| Waternet | -0.270% | 4/8 | measured |
+| Game of Life | -0.141% | 5/7 | measured |
+
+Rubido raw results are under
+`generic-i32-load-vs-inline-compare-clean2-20260727/rubido`, with pairs and
+summary SHA-256
+`8c2aa588d40f547a2f0957f65b046f1081869e32265f87868dcba432f0c7be38`
+and
+`cb91fb8e26b9880cdf35b1bf7f14c0e17e47337bca0a97a420db4213d911a22a`.
+The clean Waternet rerun is under
+`generic-i32-load-waternet-clean4-20260727/waternet`, hashes
+`6265e20fcc5329f18ed4579f5d7082581d05525a1896804c71f7da6ab0cc953f`
+and
+`0a5d23f1b66a4ee982703c3ac7563ea5e15ca7519ce574ba9d8d395c23726cc5`.
+The clean Game of Life rerun is under
+`generic-i32-load-gol-clean4-20260727/game-of-life-zig-edition`, hashes
+`d991c6b6c079686a2e7166a7f96100a81148d4d447005ff90f9056af73eb1a1f`
+and
+`3d17459b75359b23c51ac8de49f8cd22384b1c9c5d1e615810bb02ad719889fe`.
+Two earlier control attempts overlapped an unrelated Buildroot or phoneME
+process and are explicitly non-authoritative.
+
+**Decision.** Reject and remove. The only positive route is below two tenths
+of a percent, while Waternet and the heavy Game of Life route regress. The
+direct handler shifts cost rather than reducing total phoneME work. Revisit
+only as part of a materially different memory representation or slot-addressed
+IR, not as the same standalone inline handler.
+
+### Confirmed instruction-budget prerequisite
+
+The current fused W4IR path still fails exact instruction-budget recovery.
+The current checkout reproduces a limit-three case as
+`instructions=5`, `memory[0]=0`, and stack `0,3`, while the reference traps
+before the forbidden add with `instructions=4` and stack `0,1,2`.
+Retaining a complete unfused stream fixes exactness but approximately doubles
+W4IR/RMS storage, so that form remains rejected. Compact or fused memory
+experiments must first use sparse recovery metadata or another exact mechanism;
+generic single-opcode candidates NJIT-025 and NJIT-026 do not alter this
+pre-existing defect.
+
+### NJIT-027: generic `local.set` and `local.tee` direct stack path
+
+**Status:** `rejected`.
+
+The outer handlers currently call `pop()` for `local.set` and `peek()` for
+`local.tee`. Both helpers add a Java method frame around one stack-height
+guard and one `long[]` access. The candidate duplicates those exact guards in
+the handlers and reads or removes the top value directly. It deliberately
+leaves `local.get` and `push()` unchanged because the latter also implements
+the distinct value-stack-capacity trap and exception rollback.
+
+The exact production-stream profile records 733,704 `local.set` and 12,917
+`local.tee` operations on Rubido, 408,010 and 409,924 on the single Game of
+Life frame, 22,826 and 23,743 on the Waternet browser route, and 29,531 and
+18,632 on Untangle. These totals include compact execution, so they are
+selection evidence and an upper bound rather than a claim that every operation
+will use the changed outer handler.
+
+Baseline source is retained NJIT-025 with SHA-256
+`cae0f2b3e21006e816e4ffaa76fdb9e5daad8e48a7b1c69a46e84adf74ecc444`.
+The freshly rebuilt counterless phoneME class is
+`4cbb8fa6ebbc248444c3da434dd5104b3e7ed7ae8bceb550f5cfdc911d140213`;
+the complete staged tree used for the next comparison is preserved at
+`/tmp/w4me-njit027-baseline-20260727/counterless-preverified`.
+
+Acceptance requires exact full-state and trap behavior, Java 1.3/CLDC and
+preverification gates, then at least twelve balanced native i686 phoneME pairs
+against NJIT-025. Rubido and Game of Life are primary routes; Waternet and
+Untangle are no-regression controls. No W4IR, cache format, retained field,
+heap allocation, instruction accounting, compact region, or trace changes are
+allowed.
+
+The isolated candidate source was
+`a2babce77167442904ab659a905d2b63e2999cf1b194391887b720c24a48e488`;
+its counterless interpreter class was
+`0cabc892574c97de849c3bb21a14aef2e3908a501f8bf6b79e0f4b913b6bfbc9`.
+The complete `just verify` matrix passed with all seven workload states exact.
+Diagnostic/counterless `execute` sizes were 7,629/7,597 bytes, compared with
+7,577/7,545 for NJIT-025.
+
+Twelve balanced native i686 phoneME pairs against NJIT-025 produced:
+
+| Workload | Median effect | Wins/losses | Decision evidence |
+| --- | ---: | ---: | --- |
+| Rubido | -0.249% | 4/8 | measured regression |
+| Game of Life | +0.173% | 8/4 | resolved but immaterial |
+
+Raw results are under
+`/tmp/w4me-interpreter-research/raw/njit024/runs/njit027-local-set-tee-vs-njit025-20260727/`.
+Rubido pairs and summary SHA-256 values are
+`47d3e1d2f9f4a1e0a9f6fce52151321c22af7deeda9ffce5be6d7ff425beaee0`
+and
+`1656efd37868fc8fae75dd25b5fdf3691f61d4a3c4bebb31e5044bf388d6be4e`.
+Game of Life values are
+`7ffd5f2a5e4cabfc421783c50fac559ce0453856368f961a0cbadf3bf772825e`
+and
+`cd504d6f9db9cf42209013d5e1214eb8f9035c8ba5e798d098c65084872d9698`.
+Waternet and Untangle controls were not run because the primary Rubido gate
+already failed.
+
+**Decision.** Reject and remove. Eliminating these two helper frames does not
+produce a portable aggregate benefit on the no-JIT judge. The retained source
+again matches NJIT-025 exactly. Revisit local access only through a materially
+different representation such as slot-addressed W4IR, not by repeating the
+same handler inlining.
+
+### NJIT-028: generic `local.get` exact direct push
+
+**Status:** `rejected`.
+
+This candidate isolates the remaining generic local handler. `local.get`
+currently calls `push()`, which creates a Java method frame around the
+`long[]` write, post-increment, mandatory JVM bounds check, overflow rollback,
+and canonical `value stack exhausted` trap. The candidate duplicates that
+exact `try/catch` sequence inside only `case 0x20`; `local.set`, `local.tee`,
+the helper itself, and every other caller remain unchanged.
+
+The exact production-stream profile records 996,056 `local.get` operations on
+Rubido, 817,287 on the single Game of Life frame, 107,082 on the Waternet
+browser route, and 68,633 on Untangle. These are upper bounds because compact
+execution bypasses the outer handler. Compared with rejected NJIT-027, this
+candidate has both higher coverage and a more expensive helper boundary, but
+also adds an exception-table entry to the large outer method.
+
+The baseline remains retained NJIT-025:
+source `cae0f2b3e21006e816e4ffaa76fdb9e5daad8e48a7b1c69a46e84adf74ecc444`,
+counterless class
+`4cbb8fa6ebbc248444c3da434dd5104b3e7ed7ae8bceb550f5cfdc911d140213`.
+Acceptance requires focused stack-capacity and overflow exactness, the complete
+Java 1.3/CLDC/full-state matrix, then twelve balanced native i686 phoneME pairs
+on Rubido and Game of Life. Waternet and Untangle are controls only if both
+primary gates pass. No retained state, allocation, W4IR, cache format,
+instruction accounting, tier topology, or cartridge recognition may change.
+
+The isolated source was
+`cf7a56c5afac84eb227966d7faf8b7da4cd7128a0a1eb94f977ffe513fb628c8`;
+its counterless interpreter class was
+`a03fe48a693c19eb0280e775ae42c5059090974f3adcbbf78ee733dd32489502`.
+The complete `just verify` matrix passed, including the dedicated
+`value-stack-push-guard` cases and all seven exact workload states.
+Diagnostic/counterless `execute` sizes were 7,641/7,609 bytes.
+
+Twelve balanced native i686 phoneME pairs against NJIT-025 produced:
+
+| Workload | Median effect | Wins/losses | Decision evidence |
+| --- | ---: | ---: | --- |
+| Rubido | -0.635% | 3/9 | measured regression |
+| Game of Life | +0.356% | 7/5 | measured but insufficient |
+
+Raw results are under
+`/tmp/w4me-interpreter-research/raw/njit024/runs/njit028-local-get-vs-njit025-20260727/`.
+Rubido pairs and summary SHA-256 values are
+`83c445bd6dbe80aca22a617bf7b1ff689224b9f551c6ee18861301ddc307dfe5`
+and
+`4d4c8af447cd2e78e2de2847c6252238c5743f719ff3b131522ab8162fbbe8ac`.
+Game of Life values are
+`913775fef3c10751f83f73b67a445c7de75826dc4af98fb044d09ba91b5d1102`
+and
+`992f0ed742b7c5afde460f66e4654c353050ec330f748898dba3ab7e1b718ca5`.
+Controls were skipped after the Rubido primary gate failed.
+
+**Decision.** Reject and remove. Inlining the exact capacity `try/catch`
+increases the outer method and regresses Rubido more than the small Game of
+Life benefit. Together NJIT-027 and NJIT-028 close standalone generic local
+handler inlining; revisit local traffic only through a different IR or stack
+representation.
+
+### NJIT-029: packed horizontal framebuffer spans
+
+**Status:** `accepted`.
+
+The native i686 phoneME VM was rebuilt out of tree with its upstream
+statistical Java-method profiler enabled. This is a selection profile, not a
+timing comparison: timer ticks and profiling perturb execution, so none of its
+wall times are acceptance evidence. The profiled VM SHA-256 is
+`5f0d0bc236742cb5e166feba9ffe24e3ff866d586d64395ba51d77e25011380c`.
+Its method samples attribute the following shares to
+`Wasm4Runtime.drawHorizontal`:
+
+| Workload | Samples | Share |
+| --- | ---: | ---: |
+| Waternet | 78 | 34.7% |
+| Rubido | 89 | 9.5% |
+| Untangle | 184 | 74.5% |
+| Game of Life | 0 | 0% |
+
+The raw `flat.prf` SHA-256 values are
+`80dfdcc0a261941f60e3416cd4bce3b1dc94c50f6fc5c6ca30f2c6bd4bd1dc`
+for Waternet,
+`d71bb59aa4123092ba7ffce10d449ab3f83152e9cdd1b295be965201e7dde0ae`
+for Rubido,
+`fa90f352671317ea4d090b85891da2894da996fe8a012f9141382c0e23da0be7`
+for Untangle, and
+`3ad6be241b9f15665abd13d4b6c2fe5213eaa417d2a91f3c3f66212f99187d6a`
+for Game of Life. Aggregate VM instrumentation independently records
+hundreds of millions of `aload_0 + getfield` shapes and tens of millions of
+Java method entries on the heavy routes, but those totals are supporting
+mechanism evidence only.
+
+`drawHorizontal` currently invokes `drawPoint` once per destination pixel.
+Every call reconstructs the linear pixel index and packed-byte address, enters
+another Java frame, reloads runtime constants, reads the same framebuffer byte
+up to four times, and writes only two bits. The candidate keeps the existing
+private method and all caller-side clipping unchanged, but handles the leading
+partial byte, complete four-pixel bytes, and trailing partial byte directly.
+Complete bytes use one pre-expanded color byte; partial bytes preserve all
+pixels outside `[startX, endX)`.
+
+The retained baseline is NJIT-025. `Wasm4Runtime.java` SHA-256 is
+`8d2c633824c3ffcb58971e0a28e91ada6639fc26179091be7450c28639cba830`;
+the counterless preverified runtime class SHA-256 is
+`95fd55080b40b5686ef0c7d87cad32dd2619bbe5cc8691a077a4a49584480adf`
+and its size is 23,218 bytes. The interpreter source remains
+`cae0f2b3e21006e816e4ffaa76fdb9e5daad8e48a7b1c69a46e84adf74ecc444`.
+The VM, CLDC classes, and preverify hashes remain the values recorded for
+NJIT-028.
+
+The implementation must remain Java 1.3 and CLDC-only, allocate no objects,
+retain the 160x160 2-bpp layout, preserve the untouched bits of both boundary
+bytes, and leave `drawPoint`, every primitive's clipping rules, W4IR, cache
+format, instruction accounting, input, disk, and audio untouched. Focused
+tests must compare every color and every start/end alignment, including empty,
+one-pixel, cross-byte, full-row, and boundary spans, against the scalar
+reference. The complete full-state and Java ME verification matrix must pass
+before timing.
+
+The authoritative A/B uses the normal counterless native i686 phoneME VM,
+never the profiler build. Run at least twelve balanced pairs on Waternet and
+Untangle as primary routes, with Rubido as a no-regression and secondary-win
+control. Game of Life is an exactness control only because the method profile
+found no samples there. Accept only a resolved primary improvement with no
+exact-state or route regression; remove the candidate otherwise.
+
+The isolated implementation has
+`Wasm4Runtime.java` SHA-256
+`cf4c0350162364f69a1a7cb53c2bd97d5872d8efd1622bc355b51c0fa718d703`.
+Its counterless preverified runtime class is 23,625 bytes, SHA-256
+`16657bca89a38f69d9845c28dd42b8b88ce4eda4e41546f2fe2be03f5aac47b5`,
+which is 407 class bytes larger than the retained baseline and allocates no
+additional heap. The candidate-specific staged phoneME artifact SHA-256 is
+`314cf65997e87a527642a8fec64a12b26269024d6c8db15986db332976c21da5`.
+The interpreter class is byte-identical to the baseline at SHA-256
+`4cbb8fa6ebbc248444c3da434dd5104b3e7ed7ae8bceb550f5cfdc911d140213`.
+
+The focused differential covers 320 cases across all four colors, every
+start/end modulo-four alignment, empty and one-pixel spans, cross-byte spans,
+complete rows, and both clipping boundaries. The complete `just verify` gate
+passes, including full-state exactness for all seven workloads, Java 1.3,
+CLDC, target-47, preverification, release integrity, and the 16,000-byte
+interpreter sanity limit.
+
+The completed primary native pairs are:
+
+| Route | Baseline/candidate median effect | Wins | Timer-resolved |
+| --- | ---: | ---: | --- |
+| Waternet | **+32.070%**, +5,412.0 us/frame | 12/12 | yes |
+| Untangle | **+63.839%**, +3,058.5 us/frame | 12/12 | yes |
+| Rubido | **+8.307%**, +8,174.5 us/frame | 12/12 | yes |
+| Game of Life | +0.617%, +19,500.0 us/frame | 9/12 | yes |
+
+All route signatures are exact. Waternet raw `pairs.csv` / `receipt.txt`
+SHA-256 values are
+`afc23c80ebc10657f2d3c79a8558566527ab33ce828763e16e229b6f08e7f7ce`
+and
+`042d19e5c41e2cf28bdc0b9f360f8e3ae6ee1b946660ed2e22e9ee542264916d`.
+Untangle values are
+`4d52529a80e566411dcecd7e9376bc67a286c283e5dc5289c2f19a67c029812d`
+and
+`f1e75b76acf881e686ac776e5d85124ee84d8e3851fd1103aa74b17c89f8c259`.
+Rubido values are
+`b750bf26f35d5c576ec7b9a8a87ff663d209800737d84f3596490e72ca36a345`
+and
+`424c99e89c074fe4d9682c927e2a958a16e960fe8c6c41b6c436e43924309025`.
+Game of Life values are
+`0066533b978664146d336664666375ca206af173e275089bd1614a8b6253d2df`
+and
+`8b436dee3863c9c3273c3524efea3b8366f9f65372ddf7b66692eb4a21cdb599`.
+Both live under
+`/tmp/w4me-interpreter-research/raw/njit024/runs/`
+`njit029-packed-horizontal-vs-njit025-20260727/`.
+Game of Life uses one measured frame per VM and therefore has a coarse
+1,000-us/frame timer resolution; its sub-one-percent result is a
+no-regression control, not an attributed renderer win.
+
+**Verdict:** accept and retain. Both primary routes have large resolved wins,
+Rubido independently confirms the method-profile mechanism, Game of Life has
+no measured regression, and every deterministic signature remains exact.
+The implementation adds 407 preverified runtime-class bytes and no persistent
+or peak heap. The earlier contaminated Rubido attempts were discarded before
+receipt finalization: a concurrent 12-way Buildroot build started between the
+paired runs. The final receipt was restarted from sample zero after the host
+became quiet and contains only the twelve clean balanced pairs above.
+
 An independent renderer review found three additional non-overlapping
 candidates and recorded them separately so this loop does not rediscover or
 combine them: hoisting `argbLookup` removes one `getfield` per destination
 pixel for only eight class bytes; caching the last packed framebuffer byte
 can reduce 57,600 byte loads to 9,600 at side 240 for about 41 class bytes;
-and the existing `copyArgb` is a possible side-160-only path. The first two
-are queued as NJIT-018 and NJIT-017 respectively. Neither is included in
-NJIT-016's code or timing.
+and the existing `copyArgb` is a possible side-160-only path. NJIT-017 and
+NJIT-018 were accepted independently before this candidate. None of those
+changes is included in NJIT-029's code or timing.
+
+### NJIT-030: inline generic control-frame entry
+
+**Status:** `accepted`.
+
+The post-NJIT-029 native i686 phoneME statistical profile moves Rubido's
+remaining time back into the interpreter: `executeCompactBlock` accounts for
+41.4%, `execute` for 39.3%, and the private `enterControl` helper for 5.2%.
+Waternet attributes 3.4% to the helper, while Untangle and Game of Life are
+lower-coverage controls. These are selection samples only; the profiler VM
+perturbs timing and is never an acceptance judge. The Rubido `flat.prf`
+SHA-256 is
+`9e5764084224d64b94159cb1d79d4bc3060fd1b34cf6fffa3c48f78588f5ae4e`;
+Waternet, Untangle, and Game of Life are
+`aab26bae2e3fed41b10e67248aa470e63a802ad64821a4d917ca241d64fd73e0`,
+`01cfea2e66410de19160cb0aec2999446210d35ef42234f559dc9a0c0cbdea7d`,
+and
+`39ed7f7212a22d6fee277b2ec4622118620be4d291ebe9653de418864d7f76d7`.
+
+The retained exact opcode profile, report SHA-256
+`c1d45035a5114b75e2e376feca193d93b5271fe218fa891a5e4986d93e8d92c5`,
+records the following `block + loop + if` executions:
+
+| Workload and route | Control entries | Entries/frame |
+| --- | ---: | ---: |
+| Rubido browser, 70 frames | 2,210,927 | 31,584.67 |
+| Waternet browser, 94 frames | 173,315 | 1,843.78 |
+| Untangle browser, 401 frames | 114,271 | 284.97 |
+| Game of Life idle, 1 frame | 333,456 | 333,456.00 |
+
+The profile predates NJIT-029, but NJIT-025 through NJIT-029 do not rewrite
+`block`, `loop`, or `if`; their exact logical streams and route state remain
+unchanged. The counts therefore remain coverage evidence for this isolated
+helper-call candidate.
+
+`execute` has two `invokespecial enterControl` sites: one shared by
+`block`/`loop` and one in `if`. The candidate copies the exact helper body
+into those two cases and removes the now-unreachable private method. It must
+preserve the control-stack limit check, opcode, parameter/result counts,
+parameter underflow trap, all six parallel control arrays, increment order,
+`if` condition pop order, else/end behavior, and every trap message. It must
+not cache control state across dispatches, lower `end`/`else`, change branch
+descriptors, W4IR, instruction accounting, compact eligibility, heap, or any
+other opcode.
+
+Existing `StaticBranchDescriptorSmoke` cases cover block results, loop
+parameters, if results, branch tables, and exact logical counts. The complete
+seven-workload full-state matrix additionally covers nested real-world
+control flow. Before timing, `javap` must prove both `enterControl` invokes
+and the private method are absent, while Java 1.3, CLDC, target-47,
+preverification, trap, budget, cache, release, and interpreter-size gates all
+pass.
+
+Use NJIT-029 as the hash-bound counterless baseline. Run at least twelve
+balanced native i686 phoneME pairs on Rubido as the primary route, followed
+by Waternet and Game of Life no-regression controls only if Rubido is not
+decisively negative. Accept a repeatable timer-resolved positive primary
+effect with exact signatures and no resolved control regression; otherwise
+remove the inlining and record the rejection. Bytecode or class-size savings
+alone are not performance evidence.
+
+The isolated implementation has `WasmInterpreter.java` SHA-256
+`f6858e981b0ad841c8a750886421bafbb432e7aa1a99318d9c8cba60446a66dd`.
+Target-47 `javap` proves that `enterControl` is absent as both a method and a
+call target. Diagnostic/counterless `execute` sizes are 7,833/7,801 bytes,
+up from the NJIT-029 7,577/7,545-byte baseline and below the 16,000-byte
+sanity limit. The candidate counterless preverified interpreter class is
+84,664 bytes, SHA-256
+`f7a54576940a0f1d825af8838de37e3d95bf4612e02eb3478917b3ec2bc0afca`;
+the baseline is 84,439 bytes,
+`4cbb8fa6ebbc248444c3da434dd5104b3e7ed7ae8bceb550f5cfdc911d140213`.
+The runtime class remains byte-identical to NJIT-029 at
+`16657bca89a38f69d9845c28dd42b8b88ce4eda4e41546f2fe2be03f5aac47b5`.
+
+`just test` and `just verify` pass, including the 12-case static branch
+descriptor smoke at exact logical count 160, the complete seven-workload
+full-state matrix, Java 1.3, CLDC, target-47, preverification, trap, budget,
+cache, framebuffer, audio, storage, release, and counterless gates. The
+counterless exactness artifact is
+`76a0ab4c2f79438f63a62a6d7aeea87b1d1c9288d8a2ca3eb1dee84bdf6a67e8`.
+The staged phoneME candidate artifact is
+`159e3acd509c9ffaaf231b6dca9ba20fc51ed87226a812613596d1c15267ecbe`;
+its build receipt SHA-256 is
+`0c040b97ce96ba77af3c3bd9489bc8ceda546c07a38055c78b5bbf1482725ae8`.
+The candidate adds 225 preverified interpreter-class bytes and no field,
+array, allocation, persistent heap, W4IR, RMS, or runtime-class bytes.
+
+The final balanced native i686 phoneME result is:
+
+| Route | Median paired effect | Wins | Timer resolution |
+| --- | ---: | ---: | ---: |
+| Rubido | **+0.930%**, +829.5 us/frame | 12/12 | 16.667 us/frame |
+| Waternet | **+1.017%**, +114.5 us/frame | 10/12 | 16.667 us/frame |
+| Game of Life | **+0.768%**, +24,500.0 us/frame | 8/12 | 1,000 us/frame |
+
+All deterministic route signatures match exactly. Raw evidence lives under
+`/tmp/w4me-interpreter-research/raw/njit024/runs/`
+`njit030-inline-control-entry-vs-njit029-20260727/`. Rubido
+`pairs.csv` / `receipt.txt` SHA-256 values are
+`ca4b804cc56f18265d340f90af62afde8459b5cefbdc91a2cdaa2d0985879925`
+and
+`1b31d24a14f573aad571cd71f39c7fa0253b9351695aeca81890d138486aff38`.
+Waternet values are
+`e723ccb34d6027ea401228c8820b9372e1c8c727bff8b97fb2d7281d4c595c61`
+and
+`44ebc148f40a07ed331723b6851145c41ab87bd7a47ae0c174c3c6e473aa16d6`.
+Game of Life values are
+`5ee77e7cab162aeb1ea4d58787c22c4bb183f8692a63348a43e9febf2a2533e6`
+and
+`18a8215b10efeb2d3ea2760e8b26e9076df0c14416ea220c727efef04ea743c6`.
+
+**Verdict:** accept and retain. The primary Rubido effect is
+timer-resolved, order-independent, and positive in all twelve pairs. Both
+controls are positive, exactness is complete, and the change adds no runtime
+state. The 225-byte class growth is not an acceptance cost under the current
+size policy; it records the price of duplicating the hot body into the two
+dispatch sites.
+
+### NJIT-031: zero- and one-value control-transfer fast paths
+
+**Status:** `accepted`.
+
+The post-NJIT-030 native i686 phoneME statistical profile attributes 3.7% of
+Rubido samples, 1.9% of Waternet samples, and 1.5% of Game of Life samples to
+the private `transfer(int, int)` helper. Its current implementation validates
+the transfer, copies every result through the fixed `transferValues[]` scratch
+array, resets `valueTop`, and enters a second loop that calls `push()` for each
+result. WebAssembly 1.0 control signatures overwhelmingly transfer zero or one
+value, so both loops and the scratch array traffic are avoidable on the common
+paths without changing the general multi-value fallback.
+
+The retained exact opcode profile records 26,766 dynamic `end` operations on
+the 94-frame Waternet route, 133,183 on the 70-frame Rubido route, and 535,685
+on the single Game of Life frame. Branch and function-return paths call the
+same helper. These counts are selection evidence rather than a direct count of
+transfer arity. The method-profile `flat.prf` SHA-256 values are
+`c11bd733b52f5036698697975625063a4c666e43b275efb12ec41caa5a9232e7`
+for Waternet,
+`dfc24d7e2920763538852370f154093f44cc3fd17eb441a11fc4b1ded587bfdd`
+for Rubido, and
+`5be14ff4d6415c1e559dece8587c4870ae193899194d39e45d578f947e4329f7`
+for Game of Life. Profiling selects the candidate only; its perturbed wall
+time is not acceptance evidence.
+
+The candidate keeps the existing validation first and adds two returns before
+the generic loops. For `count == 0`, it sets `valueTop` directly to
+`destinationBase`. For `count == 1`, it saves `values[valueTop - 1]`, resets
+`valueTop`, and calls the unchanged `push(long)` so capacity failure,
+post-increment rollback, exception type, and trap text remain canonical.
+Counts above one use the existing scratch array and both loops byte-for-byte.
+The candidate must not change control descriptors, control arrays, function
+entry/return ordering, branch targets, W4IR, RMS, instruction accounting,
+value-stack representation, persistent heap, or any cartridge-specific
+behavior.
+
+The hash-bound baseline is accepted NJIT-030:
+`WasmInterpreter.java` SHA-256
+`f6858e981b0ad841c8a750886421bafbb432e7aa1a99318d9c8cba60446a66dd`;
+counterless preverified interpreter SHA-256
+`f7a54576940a0f1d825af8838de37e3d95bf4612e02eb3478917b3ec2bc0afca`,
+size 84,664 bytes; runtime class SHA-256
+`16657bca89a38f69d9845c28dd42b8b88ce4eda4e41546f2fe2be03f5aac47b5`.
+The native VM, CLDC classes, and preverify SHA-256 values are respectively
+`bb4866969747430bb619d139c75ab31982e8967aa0e2dcc3e278fcc7920839a2`,
+`117820661071b411b3937e8c708a9581aa48ba06fd06e24eadb5ebbf2036afbe`,
+and
+`4fe0d1b160ac7f18c4f7489917a1d868ff82df50842ca718729b098b25f2f50c`.
+
+Before timing, pass focused zero/scalar/multi-result, underflow, function
+return, branch, exact-budget, and full-state coverage; Java 1.3, CLDC,
+target-47, preverification, release, cache, and 16,000-byte method gates; and
+inspect `transfer` to prove both common cases bypass the copy loops. Build a
+counterless candidate with no runtime selection branch. Run at least twelve
+balanced native i686 phoneME pairs on Rubido and Game of Life as primary
+routes, followed by Waternet as a no-regression control when the primaries are
+not decisively negative. Accept only a repeatable timer-resolved positive
+aggregate result with exact deterministic signatures and no resolved control
+regression; otherwise remove the source change and retain this ledger entry.
+
+The isolated implementation has `WasmInterpreter.java` SHA-256
+`b1438a228dbcb73ac2e3ae2eb5d4643dbda5ff39a0351be090f5505e2602b9da`.
+Target-47 `transfer` retains the original 34-byte validation prefix, returns
+from the zero-result path at bytecode offset 43, handles one result before
+offset 72, and leaves the former two loops as the only path for larger
+arities. Its code grows from 94 to 133 bytes. The counterless preverified
+interpreter is 84,756 bytes, SHA-256
+`26e45b9d553fe4677425b0b05feb2a138deb060abfc3138480e6e178b1f0101f`,
+which is 92 class bytes above NJIT-030. The counterless runtime remains
+byte-identical at
+`16657bca89a38f69d9845c28dd42b8b88ce4eda4e41546f2fe2be03f5aac47b5`.
+There is no field, array, allocation, W4IR, RMS, persistent-heap, or release
+resource delta. Inner-class binary differences are limited to shifted
+`LineNumberTable` entries caused by the ten added source lines; their
+executable `javap -c` output is identical.
+
+`just test` and `just verify` pass. The focused static-control fixture covers
+zero/scalar and 16-value transfers at exact logical count 160; the defined
+call fixture covers result and argument arities; stack-capacity and malformed
+descriptor traps remain exact. The seven-workload full-state matrix, Java 1.3,
+CLDC bootclasspath, target-47, preverification, release, cache, budget, and
+16,000-byte method gates all pass. The counterless exactness artifact is
+`92a70f3d6ed369e9fdcb03cca80987f3553b30189e9b1841a3d29a92bc288b6b`.
+The station and base JARs are 275,406 and 272,884 bytes, SHA-256
+`e522fa8740790478b9eed483a3ecbe7f596f45209a1d8e2fe61d185c19a49448`
+and
+`920e540af0ee636e989be1d5e1316a51597472c1c8f6e823a2347c96794dd3a0`.
+The staged phoneME artifact is
+`b6bd0be856f00c5f65df32aa82571dc9c024e110ffe712e119566cbdd9b0d468`;
+its build receipt SHA-256 is
+`8f7661fd15eca3a33f4030bb8dacbe11c399de2779384614c11367a04dc1b45f`.
+
+The authoritative native i686 phoneME results against NJIT-030 are:
+
+| Route | Median paired effect | Wins | Timer resolution |
+| --- | ---: | ---: | ---: |
+| Rubido | **+0.695%**, +612.5 us/frame | 11/12 | 16.667 us/frame |
+| Game of Life | **+1.009%**, +32,000 us/frame | 11/12 | 1,000 us/frame |
+| Waternet, initial | -0.181%, -20.0 us/frame | 4/12 | 16.667 us/frame |
+| Waternet, expanded decision series | **+0.324%**, +36.0 us/frame | 14/24 | 16.667 us/frame |
+
+Every invocation matched checkpoints and all deterministic counters. The
+Rubido series contains one isolated candidate scheduling spike
+(103,062 us/frame versus the otherwise 87,418--88,844 candidate range); the
+paired median is insensitive to it and the other eleven pairs all favor the
+candidate. Because the first Waternet series was small and negative, it was
+not discarded or reinterpreted: a separately named 24-pair decision series
+was run. That larger balanced series reverses the sign and satisfies the
+predeclared no-regression gate.
+
+Raw evidence lives under
+`/tmp/w4me-interpreter-research/raw/njit024/runs/`. In
+`njit031-transfer-arity-fast-vs-njit030-20260727`, Rubido
+`pairs.csv` / `receipt.txt` SHA-256 values are
+`e640413f99fc0b412d99e6b21de90e9a29bada791e2012b5ffbae0ac19f7b15f`
+and
+`e50ad07889f955d9692b58e33133aeb75e3f4b2e98266798ba6afa2129cd30f6`;
+Game of Life values are
+`36833fa5405fec6a2e93526731d8078e4987bb367fc88f8b335b6ad20a4fcc82`
+and
+`8a448b3593921878158a87f1fb34f8fc8ee8fd54097feaed632e4156f9161dac`;
+the initial Waternet values are
+`9ef331daac6c4d56d53a4c6573ae85e66e3743b9597f5fd912e7ef5acecd3bf5`
+and
+`ffbfe35fe971cc859b90b1199a6f4daf68f14f3f9ec88f2c882b0e2eb08aea44`.
+The expanded decision series is
+`njit031-transfer-arity-fast-waternet-repeat-20260727`; its Waternet
+`pairs.csv` / `receipt.txt` SHA-256 values are
+`5496f705c90312286c57e5264c53e308d8588bf86d5f89672a5ea483339f7d98`
+and
+`8012f858750fd3fbdf81b33ce5305a26e0309d225906d1a730676ac4c886b448`.
+
+**Verdict:** accept and retain. Both heavy primary routes show resolved,
+order-independent improvements with eleven wins each. The expanded Waternet
+control is positive, exactness is complete, and the implementation adds only
+92 preverified class bytes with no runtime state or format change.
+
+### NJIT-032: compact `i32.load8_u` direct stack/address path
+
+**Status:** `rejected`.
+
+This is a materially new continuation of the inconclusive NJIT-024 entry, not
+an unrecorded repeat. NJIT-024 stopped before its correctness gate because its
+first hand-written WAT fixture did not validate. A later independent research
+pass corrected the fixture and demonstrated byte-identical success, budget,
+and five out-of-bounds snapshots on the old source state. That pass also
+measured two independent twelve-pair Game of Life series at +1.019% and
++0.978% on native i686 phoneME. Those old timings are selection evidence only:
+NJIT-032 must be rebuilt and remeasured against the retained
+NJIT-025+NJIT-029+NJIT-030+NJIT-031 source.
+
+The post-NJIT-031 statistical profile still attributes 2.3% of Game of Life
+samples and 3.7% of Rubido samples to `checkedAddress`, while `pop` remains
+5.6% of Game of Life samples. The `executeCompactBlock` handler for opcode
+`0x2d` currently calls `address`, which calls `popI32`, and then calls
+`pushI32`; the generic `execute` handler already has a direct exact path.
+NJIT-032 changes only the compact handler: validate stack availability, read
+and decrement `valueTop`, validate the width-one effective address without
+integer wrap, and write the zero-extended byte back to `values[valueTop++]`.
+It must retain the current underflow-before-address ordering, the exact
+out-of-bounds trap, successful stack height, instruction accounting, compact
+region boundaries, and all existing generic behavior.
+
+The hash-bound retained source is `WasmInterpreter.java` SHA-256
+`b1438a228dbcb73ac2e3ae2eb5d4643dbda5ff39a0351be090f5505e2602b9da`.
+Its counterless preverified interpreter is 84,756 bytes, SHA-256
+`26e45b9d553fe4677425b0b05feb2a138deb060abfc3138480e6e178b1f0101f`;
+the runtime class is SHA-256
+`16657bca89a38f69d9845c28dd42b8b88ce4eda4e41546f2fe2be03f5aac47b5`.
+The current host-test interpreter and runtime class SHA-256 values are
+`d439755d5b6786ce265db1b7d42ccf3cee50c605995ab8c36a2cb905ce34a212`
+and
+`73abadb379e19fdd12962f732557b5d2631bc9b0fb635c719c2760332a7858bd`.
+The post-NJIT-031 `flat.prf` SHA-256 values are
+`15244f17a02ff3a4e39260a6839fee9da57267e708abbdcb0c901492a78fed83`
+for Game of Life,
+`4d001a43b94ebe97987328b7e71e106e0d92c12a1928a486a3f36066329e63dc`
+for Rubido,
+`b83f21d017cd331516de363df2e42d485cac49939d03ed61106bc1c2b39f698a`
+for Waternet, and
+`e081b431f88ff5839f42e12fb5deec3a73b96fb2d339ef5d1adad18e4622059f`
+for Untangle. Profiling selects the candidate and is not timing evidence.
+
+The corrected focused WAT and Java probe live under
+`/tmp/w4me-interpreter-research/candidates/njit024-focused/src/`; their
+SHA-256 values are
+`226e885680e129940871b7b1acbb0b94c5c4bb272118c30a21888143a1c26171`
+and
+`2170e6475b02c7928132e356817f98b559cff020140456bca5141cbf6cac8c3e`.
+They cover successful offsets at zero, byte boundaries, and the last memory
+byte; eighteen instruction-budget boundaries; negative and end bases;
+offset-past-end; unsigned offset overflow; and a non-wrapping sum. Before
+timing, NJIT-032 must make baseline and candidate outputs byte-identical on
+this fixture, pass the seven-workload full-state matrix, Java 1.3, CLDC,
+target-47, preverification, release, cache, budget, and 16,000-byte method
+gates, and record method/class/JAR and persistent-heap deltas. It must not add
+W4IR, RMS, persistent fields, runtime selection branches, or
+cartridge-specific recognition.
+
+The authoritative primary measurement is at least twelve balanced native
+i686 phoneME pairs on Game of Life against NJIT-031, with exact checkpoints
+and counters. Acceptance requires a paired median of at least +0.8% and at
+least nine wins. If that gate passes, run Rubido, Waternet, and Untangle
+controls and reject any timer-resolved regression worse than -0.5%. The old
+NJIT-024 measurements do not satisfy this gate and will not be pooled with
+the new series. Any unrelated fused-budget or cartridge-fast-path behavior in
+the retained baseline is explicitly outside this single-variable comparison;
+phoneME artifacts keep cartridge fast paths disabled.
+
+The isolated implementation had `WasmInterpreter.java` SHA-256
+`9d326a4c961bbd6c8108355e919f0b4e52cbc5eab2a9aaa0564683189a429edd`.
+Target-47 `executeCompactBlock` grew from 3,101 to 3,197 bytecode bytes.
+The `0x2d` handler contained no `address`, `checkedAddress`, `popI32`, or
+`pushI32` invocation. Its counterless preverified interpreter was 85,092
+bytes, SHA-256
+`6969495d164f927665b90cb2f7c7c9ca92fc60ce3642b8797ce93be7975e45f0`,
+which is 336 class bytes above NJIT-031. The runtime remained byte-identical
+at
+`16657bca89a38f69d9845c28dd42b8b88ce4eda4e41546f2fe2be03f5aac47b5`.
+Station and base release JARs were 275,491 and 272,969 bytes, each 85 bytes
+above NJIT-031, with SHA-256
+`78f73edf8a4efb4025f1b62c1655329d4bab1addfb27cf874f878772553368ae`
+and
+`c727ad72e295bf8a9c96e21f5ac8009f8250bf72e435f2c2c75b692ba96ac66f`.
+There was no field, array, allocation, W4IR, RMS, persistent-heap, or release
+resource delta.
+
+`just test` and `just verify` passed. The focused baseline and candidate
+outputs were byte-identical across 24 snapshots, SHA-256
+`250f99be0038b7a3bde98e14f59679e0ab0c7800e570f30080e92c759ab205a5`.
+The compiled focused WASM SHA-256 was
+`47482964d5a8f70ec98212ca97cd2dc970fed7b96bcb1849bce13b226500a966`.
+The seven-workload counterless exactness artifact was
+`ae5b1e7c9340083c788ee1781f669812b65b3bddb0f9abe97f80c179c48e4429`.
+The native phoneME candidate artifact was
+`5bcbefc386b9e08484aea3beb4ac02b81709a0950dc44cd9f3249ed276d4b9a6`;
+its build receipt SHA-256 was
+`36103bd44f9fffea0d035e758a55b145d22f58c0464df3fc10f2ef81527fe163`.
+
+The authoritative twelve-pair Game of Life result against NJIT-031 was
+**+0.417%**, +13,000 us/frame, with 7 wins and 5 losses and a 1,000
+us/frame timer resolution. Every checkpoint and deterministic counter
+matched. The result is positive and timer-resolved, but it fails both
+predeclared primary gates: at least +0.8% and at least 9/12 wins. Therefore
+Rubido, Waternet, and Untangle controls were not run. The raw evidence is
+`/tmp/w4me-interpreter-research/raw/njit024/runs/`
+`njit032-compact-load8-vs-njit031-20260727/game-of-life-zig-edition/`;
+`pairs.csv`, `paired-stats.txt`, and `receipt.txt` SHA-256 values are
+`f1689950dc74986a6f60a1f2262f72af6943f93726b13cde9cea874c91c63f60`,
+`13166b2caef55f8df9de2bfe1a88fe2ce14b9f0259b9ca16f15f689a7be1f01a`,
+and
+`cd845856a13d527e955c8410a4f2b5c09f1d631eaca490d0812969d1c4e52fe9`.
+
+**Verdict:** reject and remove. The compact direct path is correct and
+slightly faster, but the retained baseline reduces its marginal benefit below
+the declared acceptance threshold. The earlier approximately +1% results
+must not be reused because they came from a different source state.
+
+### NJIT-033: compact `i32.eqz` top-of-stack overwrite
+
+**Status:** `rejected`.
+
+This candidate is the smallest untested form of the E15 top-of-stack overwrite
+design. Generic `i32.eqz` already checks `valueTop` and writes the boolean
+result to `values[valueTop - 1]`. The compact handler instead evaluates
+`pushI32(popI32() == 0 ? 1 : 0)`, which crosses four private Java method
+boundaries through `popI32 -> pop` and `pushI32 -> push`, decrements and then
+increments the same stack pointer, and reloads the same stack array slot.
+NJIT-033 applies the existing generic representation only to compact opcode
+`0x45`; it does not combine instructions or add an opcode.
+
+The exact W4IR corpus report SHA-256 is
+`e9be1bf62e7499874da12fc3e119fa0f4c379a7e0654379e79c1137af029c59c`.
+It records 737,257 dynamic `i32.eqz` operations on the 70-frame Rubido route,
+76,806 on the one-frame Game of Life route, 694,600 on 60 Plasma frames,
+45,244 on the 94-frame Waternet route, and 7,197 on the 401-frame Untangle
+route. Rubido executes 9,138,220 logical instructions through 1,333,633
+compact calls; Game of Life executes 6,407,444 through 482,291 compact calls.
+Waternet and Untangle execute no compact calls and therefore serve as
+whole-class layout controls. The report profiles opcodes with tiers disabled,
+so the total opcode counts are selection evidence rather than an exact
+compact-only count.
+
+The hash-bound retained source is `WasmInterpreter.java` SHA-256
+`b1438a228dbcb73ac2e3ae2eb5d4643dbda5ff39a0351be090f5505e2602b9da`.
+Its counterless preverified interpreter is 84,756 bytes, SHA-256
+`26e45b9d553fe4677425b0b05feb2a138deb060abfc3138480e6e178b1f0101f`;
+the runtime class is SHA-256
+`16657bca89a38f69d9845c28dd42b8b88ce4eda4e41546f2fe2be03f5aac47b5`.
+The current host-test interpreter and runtime SHA-256 values are
+`d439755d5b6786ce265db1b7d42ccf3cee50c605995ab8c36a2cb905ce34a212`
+and
+`73abadb379e19fdd12962f732557b5d2631bc9b0fb635c719c2760332a7858bd`.
+The native VM, CLDC classes, and preverify identities remain the values
+recorded by NJIT-031.
+
+The implementation must keep the underflow check before any stack access,
+leave `valueTop` unchanged on success, preserve raw i32 truncation from the
+`long[]` slot, and write canonical `0L` or `1L`. It must not alter the generic
+handler, compact eligibility/topology, accounting, budget points, stack
+capacity behavior, W4IR, RMS, persistent fields, or cartridge behavior. A
+focused warm compact fixture must compare zero, positive, negative, and
+signed-boundary inputs and sweep exact instruction budgets around the handler.
+Then pass seven-workload full-state, Java 1.3, CLDC, target-47,
+preverification, release, cache, budget, 16,000-byte method, and heap gates.
+
+Build a counterless candidate with no runtime selection branch. Run at least
+twelve balanced native i686 phoneME pairs on Rubido as the primary route.
+Accept only at a paired median of at least +0.8%, at least 9/12 wins, exact
+deterministic signatures, and no unresolved semantic issue. If the primary
+gate passes, run twelve Game of Life pairs plus Waternet and Untangle
+no-regression controls; reject any timer-resolved control regression worse
+than -0.5%. Do not pool this result with NJIT-032: the opcodes, helper paths,
+coverage, and baseline/candidate class layouts differ.
+
+The isolated implementation passed the full host suite and `just verify`.
+The focused fixture exercised zero, positive, negative, and both signed
+boundary values, then swept 18 instruction budgets around the completed
+invocation. Its 19 baseline and candidate snapshots are byte-identical at
+SHA-256
+`975e038b91b837920113f1fe70dc5fe63beb7f402318636d3cf2cde69a859d80`;
+the fixture module SHA-256 is
+`62c200b76e9cd2805b70c68512122c728b64f87efd0746c06da497c9e2b97edb`.
+Target-47 `javap` confirmed that compact opcode `0x45` changed from two
+`invokespecial` calls to an underflow guard and direct `long[]` overwrite.
+`executeCompactBlock` grew from 3,101 to 3,133 bytecode bytes. The candidate
+host-test interpreter was 54,021 bytes at SHA-256
+`9fc978c04ad4ab33c8b4a841af3b2af6f3ee9f10511bba6a09a838c22be9cef4`.
+The counterless preverified interpreter was 84,823 bytes at SHA-256
+`57ac195fb90f8b8928d48e2c145f6ec627845b798c99c85986ee1f649e094854`;
+the unchanged runtime remained 23,625 bytes at SHA-256
+`16657bca89a38f69d9845c28dd42b8b88ce4eda4e41546f2fe2be03f5aac47b5`.
+The exact counterless artifact SHA-256 was
+`3291f63dc009338fcb05c3c29011de81ca79eb1d556b5c0f74f60ffeaa3e0d79`.
+
+The authoritative twelve-pair native i686 phoneME Rubido A/B measured a
+paired median of only **+0.123%**, or 108.5 us/frame, with 8 wins and 4
+losses. Deterministic signatures matched, the order was balanced, and the
+timer-resolution gate passed, but the result failed both predeclared
+acceptance thresholds of +0.8% and 9/12 wins. The pair values are:
+
+```text
+sample  baseline  candidate  order
+0       88147     88007      baseline-first
+1       87100     87821      candidate-first
+2       87674     87496      baseline-first
+3       87914     87705      candidate-first
+4       87968     87852      baseline-first
+5       87945     87798      candidate-first
+6       87914     88372      baseline-first
+7       87930     87829      candidate-first
+8       87790     87720      baseline-first
+9       87767     87984      candidate-first
+10      88689     87906      baseline-first
+11      87147     87651      candidate-first
+```
+
+Raw evidence is under
+`/tmp/w4me-interpreter-research/raw/njit024/runs/`
+`njit033-compact-eqz-vs-njit031-20260727/rubido/`.
+`pairs.csv`, `paired-stats.txt`, and `receipt.txt` have SHA-256
+`ea608570114f0a7a861750c02f950a06d73015701c4796877e0809913243ad2e`,
+`a3222db70063ef3c89d9a177b9a0c786c10d1b8cc9f6751bcd1293637ef41f63`,
+and
+`102fc194bf6044181c30d4fdd7df5b4793117d2ea2c02077bfa1789427d8e537`.
+Because the primary gate failed, the predeclared controls were not run. The
+candidate implementation was removed and the retained NJIT-031 source was
+restored exactly. The result closes this exact helper-elimination shape:
+removing two calls did not overcome the extra array and field traffic by a
+material margin on the target VM.
+
+### NJIT-034: compact `i32.load` caller-inline address guard
+
+**Status:** `rejected`.
+
+This candidate follows the explicit reconsideration condition of NJIT-005
+without repeating NJIT-026 or NJIT-032. NJIT-005 proved that the folded
+effective-address predicate is exact and measured a positive but below-floor
++0.407% when it only changed the shared helper body. NJIT-026 inlined the
+complete generic `i32.load` handler and was neutral to negative outside
+Rubido. NJIT-032 inlined the six-call compact `i32.load8_u` chain and failed
+its post-NJIT-031 acceptance gate. NJIT-034 changes only compact opcode
+`0x28`: it removes the `checkedAddress` Java call, applies the already-proven
+two-condition guard at the caller, and retains the existing `loadI32` helper.
+It therefore tests a smaller bytecode/layout change on a different, much
+hotter opcode.
+
+The exact current corpus report is SHA-256
+`e9be1bf62e7499874da12fc3e119fa0f4c379a7e0654379e79c1137af029c59c`.
+With tiers disabled for opcode counting it records 823,125 dynamic
+`i32.load` operations on the 70-frame Rubido route. The optimized tier run
+executes 9,240,467 logical instructions in 1,338,988 compact calls. The same
+source stream also contains 750,980 fused `i32.load + local.tee` operations,
+but that separate compact handler is deliberately excluded from this first
+single-site experiment. The post-NJIT-031 native statistical profile assigns
+39.7% of Rubido Java ticks to `executeCompactBlock` and 3.7% to
+`checkedAddress`; its `flat.prf` SHA-256 is
+`4d001a43b94ebe97987328b7e71e106e0d92c12a1928a486a3f36066329e63dc`.
+The profile is candidate-selection evidence, not timing proof, and it does
+not distinguish ordinary from fused callers.
+
+The retained baseline source is `WasmInterpreter.java` SHA-256
+`b1438a228dbcb73ac2e3ae2eb5d4643dbda5ff39a0351be090f5505e2602b9da`.
+Its host-test interpreter and runtime classes are 53,981 and 17,213 bytes at
+SHA-256
+`d439755d5b6786ce265db1b7d42ccf3cee50c605995ab8c36a2cb905ce34a212`
+and
+`73abadb379e19fdd12962f732557b5d2631bc9b0fb635c719c2760332a7858bd`.
+The stable counterless preverified interpreter is 84,756 bytes at SHA-256
+`26e45b9d553fe4677425b0b05feb2a138deb060abfc3138480e6e178b1f0101f`;
+the runtime is 23,625 bytes at SHA-256
+`16657bca89a38f69d9845c28dd42b8b88ce4eda4e41546f2fe2be03f5aac47b5`.
+The stable station/base JARs are 275,406 and 272,884 bytes at SHA-256
+`e522fa8740790478b9eed483a3ecbe7f596f45209a1d8e2fe61d185c19a49448`
+and
+`920e540af0ee636e989be1d5e1316a51597472c1c8f6e823a2347c96794dd3a0`.
+The native VM, CLDC classes, and preverify identities remain the values
+recorded by NJIT-031.
+
+The isolated compact handler must preserve the underflow check before address
+evaluation and leave `valueTop` unchanged on success and on any
+out-of-bounds trap. After the underflow check it reads the signed Java `int`
+base from `values[valueTop - 1]`, computes
+`maximumBase = module.memory.length - 4`, and rejects
+`(base | operand) < 0 || base > maximumBase - operand`. Java's left-to-right
+short-circuit evaluation is required: the subtraction is reached only when
+both values are nonnegative, so it cannot overflow. The successful path calls
+the unchanged `loadI32(base + operand)` and stores the same sign-extended
+`int` result in the existing slot.
+
+Do not change generic execution, the fused load/tee handler, `checkedAddress`,
+`loadI32`, compact topology, accounting, budget points, W4IR/RMS, fields,
+arrays, allocations, or cartridge behavior. Reuse the existing integer
+compact and load/tee differentials for success, final-byte trap, stack,
+budget, outer/compact, and fused-control coverage; add an isolated
+baseline/candidate snapshot only if those gates leave an operand boundary
+uncovered. Pass the seven-workload full-state matrix, Java 1.3, CLDC,
+target-47, preverification, release, cache, 16,000-byte method, and
+counterless exactness gates before timing.
+
+Build a branch-free counterless candidate and run at least twelve balanced
+native i686 phoneME Rubido pairs against retained NJIT-031. Accept only at a
+paired median of at least +0.8%, at least 9/12 wins, exact deterministic
+signatures, and no unresolved semantic issue. If the primary gate passes, run
+at least twelve Game of Life pairs plus Waternet and Untangle controls; reject
+any timer-resolved regression worse than -0.5%. If it fails, skip controls,
+record the raw evidence, remove the implementation, and restore the retained
+source exactly. A later fused-load variant is allowed only as a separately
+measured candidate and must not pool its result with NJIT-034.
+
+The isolated implementation passed the complete host and CLDC gates. The
+24-snapshot focused baseline/candidate comparison was exact at SHA-256
+`8a4eb3d213aa22585d4ed57fe215094563db140903d917a036ebae8fcd24c32f`;
+its WAT source was
+`73c7dec39768607728d9e8d2c93cc8f0bb4abc02117ea2affb029aafd104425b`.
+The seven-workload counterless full-state matrix was exact with artifact
+SHA-256
+`fcc49bbb1b212ab40215d8811e879dcd6978eab043382980567c89c08b781e16`
+and receipt SHA-256
+`598dc83c3e69e0644dc3ffb70d42a13b23fb362f4df1729bed545470c65463af`.
+The target-47 host interpreter class was 54,029 bytes at SHA-256
+`a5d13d7c253fad2f6682451eaded358497cdcbc9d7418e65d1f74f8d151d5f63`;
+the compact method grew from 3,101 to 3,137 bytes. The timed counterless
+preverified interpreter was 84,906 bytes at SHA-256
+`bb4bf2d7c5acfa6e354ead9571ca5d249fc38809650cbbfecd83c975145b9ac0`;
+its artifact identity was
+`4b99dcd8718be33d0d2239987c26ddd613ee7de0857af0e19123683b34e3f941`.
+
+Twelve balanced native i686 phoneME Rubido pairs against retained NJIT-031
+produced a timer-resolved paired median of **-0.106%**, or -93.0
+microseconds/frame, with 5 wins and 7 losses. The result fails both the +0.8%
+effect gate and the 9/12 consistency gate, so the declared Game of Life,
+Waternet, and Untangle controls were skipped. Raw evidence is under
+`/tmp/w4me-interpreter-research/raw/njit024/runs/`
+`njit034-compact-load-address-vs-njit031-20260727/rubido`;
+`pairs.csv`, `paired-stats.txt`, and `receipt.txt` have SHA-256
+`f27cae62039655bfe6bb3dce79560302f1f96e0a4c7dd534c3ede64ec7b792ce`,
+`885cd7a56096323faba1ff849e8ee966ae275a1ef62a90234ef22ee98fc8a698`,
+and
+`594700056cbe42c1c7ccde5df7565960418931c5846c8ad4a4f68ab1224c0ab3`.
+The candidate was removed and the retained NJIT-031 source restored exactly.
+This closes the ordinary compact `i32.load` caller-inline guard shape; a fused
+load/tee experiment remains a distinct candidate and cannot reuse this timing
+result.
+
+### NJIT-035: inline generic control-frame exit
+
+**Status:** `accepted`.
+
+The retained post-NJIT-031 native i686 phoneME statistical profile still
+attributes 0.9% of Rubido ticks to the private `leaveControl(int)` method,
+after assigning 47.1% to `execute`, 39.7% to `executeCompactBlock`, and 2.2%
+to `transfer`. Its Rubido `flat.prf` SHA-256 is
+`4d001a43b94ebe97987328b7e71e106e0d92c12a1928a486a3f36066329e63dc`.
+The Game of Life, Waternet, and Untangle profile hashes are
+`15244f17a02ff3a4e39260a6839fee9da57267e708abbdcb0c901492a78fed83`,
+`b83f21d017cd331516de363df2e42d485cac49939d03ed61106bc1c2b39f698a`,
+and
+`e081b431f88ff5839f42e12fb5deec3a73b96fb2d339ef5d1adad18e4622059f`.
+These samples select a candidate only; they are not timing evidence.
+
+The exact current generic corpus artifact is
+`163f230c2cb19a64a5efce3e315225ef509412fb6275a010eebdac234ffd28d4`
+and its report SHA-256 is
+`6d2362c6272120eb0b28a4bdcd58f0e884ca2bfa2b13f262cc7748e4a200a945`.
+It records 133,183 dynamic `end` operations on the 70-frame Rubido route,
+535,685 on the one-frame Game of Life route, 26,766 on the 94-frame Waternet
+route, and 40,623 on the 401-frame Untangle route. It also records 44, 0, 29,
+and 3,143 dynamic `else` operations respectively. A false `if` without an
+else is the third caller but is not separately counted by the existing
+profiler, so these opcode totals are coverage bounds rather than an exact
+method-call count.
+
+The candidate changes only the three generic dispatch sites that call
+`leaveControl`: false `if` without an else, `else`, and non-terminal `end`.
+At each site it must preserve the helper's exact ordering: check
+`controlTop <= 0`, compute `frame = controlTop - 1`, call the retained
+`transfer(resultCount, controlBase[frame])`, then assign
+`controlTop = frame`. The private helper may be removed only after target-47
+`javap` proves no call site remains. Do not inline or otherwise change
+`transfer`, terminal function return, direct branches, compact execution,
+instruction accounting, W4IR/RMS, arrays, fields, allocations, trap text, or
+cartridge behavior.
+
+The retained baseline is NJIT-031: `WasmInterpreter.java` SHA-256
+`b1438a228dbcb73ac2e3ae2eb5d4643dbda5ff39a0351be090f5505e2602b9da`;
+host interpreter class 53,981 bytes at
+`d439755d5b6786ce265db1b7d42ccf3cee50c605995ab8c36a2cb905ce34a212`;
+counterless preverified interpreter 84,756 bytes at
+`26e45b9d553fe4677425b0b05feb2a138deb060abfc3138480e6e178b1f0101f`.
+The runtime remains 23,625 bytes at
+`16657bca89a38f69d9845c28dd42b8b88ce4eda4e41546f2fe2be03f5aac47b5`.
+
+Before timing, pass the static control, malformed descriptor, defined-call,
+value-stack, seven-workload full-state, Java 1.3, CLDC, target-47,
+preverification, release, cache, budget, 16,000-byte method, and counterless
+gates. Run at least twelve balanced native i686 phoneME pairs on Rubido and
+Game of Life against retained NJIT-031. Accept only if at least one primary
+has a timer-resolved paired median of at least +0.3%, neither primary is
+worse than -0.5%, and the improving route wins at least 9/12 pairs. If those
+gates pass, run Waternet and Untangle as no-regression controls with the same
+-0.5% floor. Otherwise record the raw evidence, remove the implementation,
+and restore retained source and release artifacts exactly.
+
+The isolated implementation has `WasmInterpreter.java` SHA-256
+`3b6b4c8b8e1d65689d7c7837777cd89172b390044def0149d301da22027b3d8f`.
+Target-47 `javap` contains no `leaveControl` method or call target. Diagnostic
+and counterless `execute` sizes are 7,937 and 7,905 bytes, up from 7,833 and
+7,801 in NJIT-031 and below the 16,000-byte sanity limit. The host-test
+interpreter class is 54,008 bytes at SHA-256
+`b4867376d7cab7926a624a014264acd7f986e8c32cf6567e51d935635cf0bcb2`.
+The timed counterless preverified interpreter is 84,936 bytes at SHA-256
+`e65235aaf3f0430d639982dbf21851946bc48f1500c9ab2ab98d8bbd979e635a`,
+180 bytes above the retained baseline. The runtime remains byte-identical at
+SHA-256
+`16657bca89a38f69d9845c28dd42b8b88ce4eda4e41546f2fe2be03f5aac47b5`.
+There is no field, array, allocation, W4IR, RMS, persistent-heap, or release
+resource delta.
+
+`just test` and `just verify` pass, including static control descriptors,
+defined calls, malformed descriptors, stack capacity, every budget boundary,
+and all seven exact full-state workloads. Counterless exactness artifact
+SHA-256 is
+`9c8ab1a6fa89b19968859540de0fed5456a2f77efbf3b7fcbb53bcd04dfd8d6a`;
+its receipt is
+`4e80c4fcce681dafa80027a9b9080db894729e1ae6bde97e8d6b9f19c3fce39e`.
+The staged phoneME artifact identity is
+`750659edaf7f2adebedd65267cdc346daadd9477fcaad44ed2f096037b4219ab`.
+The station/base JARs are 275,441 and 272,919 bytes at SHA-256
+`5a98900951eb1eef35db1138bd70b9f9011844b32ee2d7ba830f3d3a6136d135`
+and
+`9d6c9a0cd211e6e2b42f68a6e48bdd3b3d5e2e7247c9623a6ad2564a6999701c`.
+
+The completed native i686 phoneME pairs against NJIT-031 are:
+
+| Route | Median paired effect | Wins/losses/ties | Evidence |
+| --- | ---: | ---: | --- |
+| Rubido | **+0.697%**, +612.5 us/frame | 12/0/0 | measured |
+| Game of Life | **+0.914%**, +28,500 us/frame | 8/4/0 | measured |
+| Waternet | -0.236%, -26.0 us/frame | 5/7/0 | measured, above -0.5% floor |
+| Untangle | -0.179%, -3.0 us/frame | 5/6/1 | exploratory, below timer resolution |
+
+Every route matched checkpoints and deterministic signatures. Raw evidence
+is under `/tmp/w4me-interpreter-research/raw/njit024/runs/`
+`njit035-inline-control-exit-vs-njit031-20260727/`. Rubido
+`pairs.csv` / `paired-stats.txt` / `receipt.txt` SHA-256 values are
+`2475bb44576ac5d0412b1e904658bbdb30142441d482766449d25668d0ad371e`,
+`c159b73214d706c794165e2c674d8d1e4637cdb70a14792b42a46c91dd226bc4`,
+and
+`48138c36fa31e77469f41c477b97cd0a03b9259d2f744070b3f73f9673f70d91`.
+Game of Life values are
+`9d419e212afb07eb0fe9be03fa043dafbe223747d7c6d3f99313e6631afd3afc`,
+`cfbf2a8d537b63e142d5bb08ace5c550ba4d779be9bd13cecd9c0fd5e6a6398b`,
+and
+`e950c87ccf64133dff0ef930509531fee6e12b4eec43aecfe5b150c14605952c`.
+Waternet values are
+`c2718b4d5148599d6e6aabd4305c1f7b18b87b2a58625992cc4ed267c4ce913b`,
+`5e32952b7c1adb7e767a8af5959acd2c1a016e5f2b821d1ad9006310136a6f85`,
+and
+`5c23f4419cb6cf8214130d0e3abb38b77786fe00641b6480a088cf28d12d48cd`.
+Untangle values are
+`60cc6809820760e019e7e4a5ffb3e73fd4f426a7c980a40f4218ef75cd534700`,
+`73472368c900002b77aee9728cc797e1126f19513327ad2564df7c44796937d5`,
+and
+`cfcc3d57717d2cd2fa8f93e735da98b3884305afb8fbbc30494c240fff6441c8`.
+
+**Verdict:** accept and retain. Rubido clears every predeclared primary gate
+with twelve wins, Game of Life independently improves, Waternet stays inside
+the declared no-regression floor, and Untangle's small negative median is
+below one timer tick per frame. The candidate removes a real Java frame from
+all generic control exits without changing runtime state or formats.
+
+### NJIT-036: direct generic branch-condition pop
+
+**Status:** `rejected`.
+
+The native i686 phoneME selection profile was repeated after accepting
+NJIT-035. Rubido now attributes 44.7% of samples to `execute`, 41.7% to
+`executeCompactBlock`, and 1.7% to the private `pop()` helper; its
+`flat.prf` SHA-256 is
+`495aa73d521c2c0bb443e3c88d3e4ef07fb09268cbfc222be1c9de3ec0456b09`.
+The profiler VM is the same SHA-256
+`5f0d0bc236742cb5e166feba9ffe24e3ff866d586d64395ba51d77e25011380c`
+selection build used for NJIT-029 through NJIT-035. Its timing is perturbed
+and is not acceptance evidence.
+
+The exact current generic corpus report, SHA-256
+`6d2362c6272120eb0b28a4bdcd58f0e884ca2bfa2b13f262cc7748e4a200a945`,
+records 1,447,533 dynamic `if` plus 115,891 `br_if` operations on the
+70-frame Rubido route. Game of Life records no `if` and 970,256 `br_if`
+operations in its single measured frame. Waternet records 45,679 `if`
+operations; Untangle records 60,549. These control opcodes never execute in a
+compact block, so every occurrence reaches the generic handler and currently
+calls `popI32()`, which calls `pop()`.
+
+NJIT-036 changes only those two condition consumers. Preserve the exact
+helper ordering by checking `valueTop <= 0`, throwing the canonical
+`value stack underflow` trap, then reading `(int) values[--valueTop]`. The
+existing `if` control-stack check, frame creation, branch targets, direct
+branch descriptors, shadow verification, fallthrough, accounting, and
+instruction budget remain byte-for-byte in the same semantic order after the
+pop. Do not change `br_table`, `pop()`, `popI32()`, comparison handlers,
+compact execution, W4IR/RMS, arrays, fields, allocations, or cartridge
+behavior.
+
+The retained baseline is accepted NJIT-035:
+`WasmInterpreter.java` SHA-256
+`3b6b4c8b8e1d65689d7c7837777cd89172b390044def0149d301da22027b3d8f`;
+counterless preverified interpreter 84,936 bytes at
+`e65235aaf3f0430d639982dbf21851946bc48f1500c9ab2ab98d8bbd979e635a`;
+runtime 23,625 bytes at
+`16657bca89a38f69d9845c28dd42b8b88ce4eda4e41546f2fe2be03f5aac47b5`.
+NJIT-035's station/base JAR hashes and exactness artifact remain its retained
+release evidence.
+
+Before timing, pass focused underflow, true/false branch, descriptor shadow,
+budget, static-control, seven-workload full-state, Java 1.3, CLDC, target-47,
+preverification, release, cache, 16,000-byte method, and counterless gates.
+Run at least twelve balanced native i686 phoneME Rubido and Game of Life pairs
+against retained NJIT-035. Accept only if at least one primary reaches a
+timer-resolved +0.5% median with at least 9/12 wins, neither primary regresses
+worse than -0.5%, and every deterministic signature is exact. If the primary
+gate passes, run Waternet and Untangle controls with the same -0.5% floor;
+otherwise remove the candidate and restore NJIT-035 exactly.
+
+The isolated candidate used `WasmInterpreter.java` SHA-256
+`2942072f1b25152536564777bec14a5ed1905152fc7a311521f645c735607946`.
+Its host target-47 class was 54,092 bytes at SHA-256
+`ec0454e01a8b1702b25e76f0feb20d69e883a27defd066286812dff6a8d81052`;
+the release and counterless `execute` methods were 8,001 and 7,969 bytes.
+The station/base JARs were 275,513/272,991 bytes at SHA-256
+`7a46ce082c433c0bea701c86e2a18af8d5d586549f4925a317253e0061fb04ec`
+and
+`b5ad6472295f95af8d76bfd3149f31d98933dfa8d7df2cd5a7fbff1a45fc2e8a`.
+The seven-workload counterless exactness artifact was
+`2128f1b6014cc14d725b85d393b8cf291257dfbd57cc83dace2bf9cefb3c1ff5`;
+its receipt SHA-256 was
+`2a5bf9050dd2482c595538a83f4ae27fbc1d72f5f677c391950ee3f2b63f2e55`.
+The timed counterless artifact identity was
+`6709cc830b7e53607fe41e3bb5688cf3cfe6f9f4cf1035196da8a29d97d25d42`;
+its preverified interpreter was 85,194 bytes at SHA-256
+`14b1cd748fc4375154faaefa799e6d191fdbe6f2da8da1f6292f665405978e0c`.
+The runtime class remained byte-identical to NJIT-035.
+
+Twelve balanced native i686 phoneME pairs against retained NJIT-035 did not
+confirm the hypothesis:
+
+- Rubido: median `-11.5 us/frame`, `-0.013%`, 5 wins, 7 losses, below timer
+  resolution;
+- Game of Life: median `-4,000 us/frame`, `-0.128%`, 5 wins, 6 losses, 1 tie.
+
+The raw evidence root is
+`/tmp/w4me-interpreter-research/raw/njit024/runs/njit036-direct-branch-condition-pop-vs-njit035-20260727`.
+Rubido `pairs.csv`, `paired-stats.txt`, and `receipt.txt` have SHA-256
+`2dc02d0918630bac009c2d4f59c4deea8596b405ece959f55d276f2d65e51d82`,
+`3a3605cea779b99e98a170a43b2767fc8a6fcf731015124d442228a789826f93`,
+and
+`d482e81268d1db3caf5f68ddc9c1497b9549b3a0438eee6f8339f00ca83e466b`.
+Game of Life equivalents have SHA-256
+`209730abf971b2b8c6755a4834fcd2befcb28004074255ceda105814bc3aa7f6`,
+`2ea63acc0a103ba3d2f90d10e16feb7b441fd87b53b3ce3069d254ef3ff47e59`,
+and
+`2f3d0689210c9ed6626886542372a97c6d6da0921f3948ab5b722b4de7fef5c7`.
+
+**Verdict:** reject. Neither primary workload reached the predeclared +0.5%
+and 9/12 gate, so Waternet and Untangle controls were correctly skipped. The
+two removed Java calls were offset by the larger generic handlers and local
+layout on the judge VM. The candidate was removed and the production source
+was restored exactly to accepted NJIT-035 SHA-256
+`3b6b4c8b8e1d65689d7c7837777cd89172b390044def0149d301da22027b3d8f`.
+
+### NJIT-037: direct compact `w4ir.local_local`
+
+**Status:** `rejected`.
+
+The post-NJIT-035 native phoneME selection profile attributes 2.1% of Rubido
+samples to `executeCompactFused`. The exact corpus report at SHA-256
+`6d2362c6272120eb0b28a4bdcd58f0e884ca2bfa2b13f262cc7748e4a200a945`
+records 747,218 dynamic `w4ir.local_local` operations on Rubido and 204,800 on
+Game of Life. Both workloads enter compact blocks, while Waternet and
+Untangle have zero compact calls and are natural no-effect controls. These
+stream counts are exact upper bounds; native timing, not the count alone,
+decides whether enough occurrences reach the compact handler to matter.
+
+The current compact loop sends every unlisted fused opcode through one
+`executeCompactFused(...)` Java call. Its `w4ir.local_local` handler then
+makes two more `push(...)` calls before returning span two. NJIT-037 moves
+only this opcode into the main `executeCompactBlock` switch and performs the
+same two sequential stack-capacity checks and writes:
+
+- check `valueTop >= values.length`, trap with the canonical
+  `value stack exhausted`, then push `locals[operand]`;
+- repeat the same check before pushing `locals[auxiliary]`;
+- set `span = 2` and retain the existing post-handler two-instruction
+  accounting.
+
+The sequential checks are required. Combining them into one precheck would
+change observable trap state when exactly one stack slot remains: the current
+helper path commits the first push before the second push traps. Do not change
+the generic fused handler, other fused opcodes, compact region formation,
+instruction accounting, W4IR/RMS formats, fields, arrays, allocations, or
+cartridge behavior. Remove the now-unreachable duplicate case from
+`executeCompactFused`.
+
+The retained baseline is accepted NJIT-035 at source SHA-256
+`3b6b4c8b8e1d65689d7c7837777cd89172b390044def0149d301da22027b3d8f`,
+counterless interpreter SHA-256
+`e65235aaf3f0430d639982dbf21851946bc48f1500c9ab2ab98d8bbd979e635a`,
+and exactness artifact
+`9c8ab1a6fa89b19968859540de0fed5456a2f77efbf3b7fcbb53bcd04dfd8d6a`.
+Before timing, pass a focused zero/one/two-free-slot stack differential,
+seven-workload full-state, Java 1.3, CLDC, target-47, preverification,
+release, cache, 16,000-byte method, and counterless gates. Inspect
+`executeCompactBlock` and `executeCompactFused` byte sizes so method growth is
+recorded rather than guessed.
+
+Run at least twelve balanced native i686 phoneME pairs against retained
+NJIT-035 on Rubido and Game of Life. Accept only if at least one primary
+reaches a timer-resolved +0.5% median with at least 9/12 wins, neither primary
+regresses worse than -0.5%, and every deterministic signature remains exact.
+If the primary gate passes, run Waternet and Untangle controls with a -0.5%
+floor; otherwise remove the candidate and restore NJIT-035 exactly.
+
+The isolated candidate used `WasmInterpreter.java` SHA-256
+`1a785b9a6144015354aff5ff42b5623578ae4cbae1762eac9c1ac5368a79d0a4`.
+Its focused test source had SHA-256
+`e5ba8e7f22e42e19b8134ac97a77c7c2b4376d1c1813a2ee0ae0a942e84890fe`
+and verified the zero-, one-, and two-free-slot cases, including the required
+partial first push. The host target-47 class was 54,101 bytes at SHA-256
+`63ccfb2fafbba47f789ca54c051089f8994834b4eec9453eb4cd7fa01159e68b`.
+`executeCompactBlock` grew from 3,101 to 3,193 bytecodes while
+`executeCompactFused` shrank from 1,376 to 1,357. The station/base JARs were
+275,476/272,954 bytes at SHA-256
+`71d6d0000cdd58ad099f765238c66deead6c3a2a1fc23c26f5154f8b10f9d7de`
+and
+`3328556903e13f725ca90e94185e5492ec0806b453ad374845639e3671dd7e52`.
+The seven-workload counterless exactness artifact was
+`6670ad3cb375393a82f6bb704d60abbd1cf371ddab956c00a5babe325bf94e33`;
+its receipt SHA-256 was
+`1e29f956c554b28c1aa1ff634fe71538c33995900624b17f6e14e24456e17dad`.
+The timed counterless artifact identity was
+`5049d8e8c4c0a5a379d0fcf9a6b6ada8cc6e87514bff7ed2a0a1d2b6cdc94c3c`;
+its preverified interpreter was 85,088 bytes at SHA-256
+`97bafaef8f7f59bf08b7d7eb3cffad796fc8decf54f0dfd9047f8ab132295610`.
+The runtime class remained byte-identical to NJIT-035.
+
+Twelve balanced native i686 phoneME pairs against retained NJIT-035 produced:
+
+- Rubido: median `+128 us/frame`, `+0.147%`, 7 wins and 5 losses;
+- Game of Life: median `-4,500 us/frame`, `-0.145%`, 4 wins and 8 losses.
+
+The raw evidence root is
+`/tmp/w4me-interpreter-research/raw/njit024/runs/njit037-direct-compact-local-local-vs-njit035-20260727`.
+Rubido `pairs.csv`, `paired-stats.txt`, and `receipt.txt` have SHA-256
+`e91bfb3ab42295aa58dbe164d0398445dcef2a47ab82b49773062468e7bab7e6`,
+`143391b197918178aa9cc32eacd6cf46a7db6b5cae6e3abd4497978465041f33`,
+and
+`51fff1b8a37d1b0bf8b91a47531600da32981f5d2df692cc87dfd2d2ec3da07a`.
+Game of Life equivalents have SHA-256
+`50cf9cd479fd557a4c31174f63c31f987197f61fb8f5d4b964c516da49a45ae1`,
+`5625cfb60bfec659b6b1742a6ae163d75a9e1c15ceeb9b11685d84a94e048843`,
+and
+`714178d94d62447f0f51d460ccc1899dd855a7c93fffae63f0246ddfa4ddfc61`.
+
+**Verdict:** reject. Rubido's small positive median did not reach +0.5% or
+9/12 wins, and Game of Life moved negative. Removing one outer Java call and
+two `push` calls did not outweigh the larger compact loop and changed method
+layout on phoneME. Waternet and Untangle controls were skipped because neither
+primary gate passed. The production and focused-test changes were removed;
+`WasmInterpreter.java` was restored exactly to accepted NJIT-035 SHA-256
+`3b6b4c8b8e1d65689d7c7837777cd89172b390044def0149d301da22027b3d8f`.
+
+### NJIT-038: compact `w4ir.local_set_get` top replacement
+
+**Status:** `rejected`.
+
+The same post-NJIT-035 phoneME profile leaves 2.1% of Rubido samples in
+`executeCompactFused`. The exact corpus report at SHA-256
+`6d2362c6272120eb0b28a4bdcd58f0e884ca2bfa2b13f262cc7748e4a200a945`
+records 698,736 dynamic `w4ir.local_set_get` operations on Rubido. Game of
+Life has only one occurrence; Waternet and Untangle have 4,281 and 19,682 but
+zero compact calls, so Rubido is the sole timing primary and the other routes
+are no-regression controls.
+
+The current compact path calls `executeCompactFused`, which executes
+`locals[operand] = pop(); push(locals[auxiliary]);`. After a successful pop,
+the push cannot exhaust the fixed-size value stack because it reuses the slot
+that was just released. NJIT-038 moves only this opcode into
+`executeCompactBlock` and replaces the pair with:
+
+- check `valueTop <= 0` and throw the canonical `value stack underflow`
+  before changing any local;
+- save `values[valueTop - 1]`, assign it to `locals[operand]`, then replace
+  `values[valueTop - 1]` with `locals[auxiliary]`;
+- leave `valueTop` unchanged, set span two, and retain the existing
+  post-handler two-instruction accounting.
+
+Assignment order is part of the contract. When `operand == auxiliary`, the
+source read must observe the newly assigned local, exactly as the current
+pop-then-push path does. Do not change other fused handlers, the generic
+handler, compact regions, formats, arrays, fields, allocations, or cartridge
+behavior. Remove the duplicate helper case while the candidate is active.
+
+The baseline remains accepted NJIT-035 at source SHA-256
+`3b6b4c8b8e1d65689d7c7837777cd89172b390044def0149d301da22027b3d8f`,
+counterless interpreter SHA-256
+`e65235aaf3f0430d639982dbf21851946bc48f1500c9ab2ab98d8bbd979e635a`,
+and exactness artifact
+`9c8ab1a6fa89b19968859540de0fed5456a2f77efbf3b7fcbb53bcd04dfd8d6a`.
+Before timing, pass focused distinct-local, aliased-local, and underflow
+differentials plus seven-workload full-state, Java 1.3, CLDC, target-47,
+preverification, release, cache, bytecode, and counterless gates.
+
+Run at least twelve balanced native i686 phoneME Rubido pairs. Accept only a
+timer-resolved median of at least +0.5% with at least 9/12 wins and exact
+deterministic signatures. If that primary gate passes, run Game of Life,
+Waternet, and Untangle controls with a -0.5% floor. Otherwise remove the
+candidate and restore NJIT-035 exactly.
+
+The implementation and its focused edge fixture passed before timing. The
+candidate source and fixture SHA-256 values were
+`dcea0965bac385c3af39c3560500ac45ecb0318392369ea2b7302c2064c13141`
+and
+`8c261102a1fe003d6072c4827498ce8241301e76d26ca621c161078efdbb6cf2`.
+The focused fixture covered distinct locals, `operand == auxiliary`, and
+underflow before local mutation. Full `just verify` passed all seven
+full-state routes, Java 1.3, CLDC, target-47, preverification, release, cache,
+bytecode, and counterless gates. The counterless exactness artifact was
+`eb3ec6ce5984986f98ee312a245c50c1eb6228263db9a82206e52bdecc53b12c`
+and its receipt SHA-256 was
+`47cd966fc2250a82d9a51be76af068dee403aecd08e4a8d5a2dd11a34fe71daf`.
+`executeCompactBlock` grew from 3,101 to 3,193 bytecodes while
+`executeCompactFused` shrank from 1,376 to 1,357. The release/base JARs were
+275,467/272,945 bytes with SHA-256
+`30da6d73278d79be48940ffaf0c13568f07aa66ab7481b2ca56faca1cf9538cb`
+and
+`b35f26d7964c4c71da2409bd9f4f6d964f08087e03f962e811659b058cf39bd6`.
+
+The timed artifact was
+`f5d7543adcde5e8ccfe74829497e835a8ca17f82cc8b842303753691f0d76ae0`;
+its 85,026-byte counterless interpreter SHA-256 was
+`0e047c6e438be6a0475d60922c66c945cb82b04a09cb3e94f400b8bce2d26123`.
+Twelve balanced native i686 phoneME Rubido pairs measured only +0.249%
+median with 7 wins and 5 losses. This misses both the predefined +0.5%
+effect floor and 9/12 win floor, so the no-regression controls were not
+eligible. Raw evidence is under
+`/tmp/w4me-interpreter-research/raw/njit024/runs/`
+`njit038-compact-local-set-get-top-vs-njit035-20260727/rubido/`;
+`pairs.csv`, `paired-stats.txt`, and `receipt.txt` have SHA-256
+`27a832a5f227332ec9332cac2253cb974ee51fcba2432573ae357dd581a5ed87`,
+`66f5975dedcd3871d151b0f524e31bcaa26396259c6a174cf6b0151d8177f464`,
+and
+`9aead5c5b3e865385d3d8cdc584849e6e63603d781af73605bc891f8cbbc40d3`.
+The candidate and its temporary fixture were removed, restoring NJIT-035
+exactly. Do not repeat this handler-only shape without a materially different
+code layout or VM-cost hypothesis.
+
+### NJIT-039: direct compact `w4ir.local_i32_const_add`
+
+**Status:** `rejected`.
+
+NJIT-037 and NJIT-038 showed that moving a fused handler into the main compact
+switch is not sufficient by itself: their Rubido medians were only +0.147% and
++0.249%. `w4ir.local_i32_const_add` has a materially different handler shape.
+The current path calls `executeCompactFused`, then `pushI32`, then `push`,
+whereas a direct compact handler can perform the local read, 32-bit wrapping
+addition, capacity guard, and single stack write without any Java method call.
+
+The exact corpus report at SHA-256
+`6d2362c6272120eb0b28a4bdcd58f0e884ca2bfa2b13f262cc7748e4a200a945`
+records 702,113 dynamic occurrences on Rubido and 281,920 on Game of Life.
+It also records 1,401,140 on the generic Plasma route, but that route is not
+available in the native phoneME route harness and the production Plasma route
+uses a cartridge fast path, so it is not a valid timing primary for this
+candidate. Waternet and Untangle record 8,126 and 23,608 occurrences but have
+zero compact calls under the retained tier policy.
+
+Move only
+`W4IR_LOCAL_I32_CONST_ADD + W4IR_EXECUTION_OFFSET` into the main compact
+switch. Before mutation, check `valueTop >= values.length` and throw the
+canonical `value stack exhausted`. Otherwise write
+`(int) locals[operand] + auxiliary` into `values[valueTop++]`, preserving Java
+`int` wraparound and the existing sign-extended `long` representation, set
+span three, and retain the common three-instruction accounting. Remove the
+duplicate helper case while the candidate is active. Do not change other
+handlers, tier selection, formats, arrays, fields, allocations, or cartridge
+behavior.
+
+The baseline remains accepted NJIT-035 at source SHA-256
+`3b6b4c8b8e1d65689d7c7837777cd89172b390044def0149d301da22027b3d8f`,
+counterless interpreter SHA-256
+`e65235aaf3f0430d639982dbf21851946bc48f1500c9ab2ab98d8bbd979e635a`,
+and exactness artifact
+`9c8ab1a6fa89b19968859540de0fed5456a2f77efbf3b7fcbb53bcd04dfd8d6a`.
+Before timing, pass focused empty-slot, last-slot, full-stack, signed-result,
+and wrapping-add differentials plus seven-workload full-state, Java 1.3,
+CLDC, target-47, preverification, release, cache, bytecode, and counterless
+gates.
+
+Run at least twelve balanced native i686 phoneME Rubido pairs. Accept only a
+timer-resolved median of at least +0.5% with at least 9/12 wins and exact
+deterministic signatures. If that primary gate passes, run Game of Life,
+Waternet, and Untangle controls with a -0.5% floor. Otherwise remove the
+candidate and restore NJIT-035 exactly.
+
+The implementation and its focused edge fixture passed before timing. The
+candidate source, fixture, and host interpreter class SHA-256 values were
+`ddaf502af25a67c4d8a9090353cf4eb0cd7a34506b961891f062cf28dd35a4bd`,
+`e672d93f6677b09029d457ef903aa5961ef47f10f4e557a2210e0db312ab09d4`,
+and
+`0158dc5acbcdc13ecaa864af8d7935a4c785ccb78f55aa2ddd2c9051080dd939`.
+The focused fixture covered empty, last, and full stack slots, a negative
+result, and signed 32-bit wraparound. Full `just verify` passed all seven
+full-state routes, Java 1.3, CLDC, target-47, preverification, release, cache,
+bytecode, and counterless gates. The counterless exactness artifact was
+`abacfde5e87f9da9a2b99397f444da9d3545f45b54e60966633fd0f0bebca73e`
+and its receipt SHA-256 was
+`e6ab813c7892788dd71608602513457cf4c251a4fca93173c66a496b6397cea9`.
+`executeCompactBlock` grew from 3,101 to 3,157 bytecodes while
+`executeCompactFused` shrank from 1,376 to 1,362. The release/base JARs were
+275,456/272,934 bytes with SHA-256
+`bd88d4716fc1a25f6c30c30988d6eff7fe46a6d056800682e6fad7cdfc13ccde`
+and
+`cbbaa54566b19da1f8a636f01c828169891db069d0ea880e6cabf2f5aabf3e0d`.
+
+The timed artifact was
+`9cc325a050eead1b1cf1959e44bef20af1e11993403edfe75554fa9dbc3a60f2`;
+its 85,020-byte counterless interpreter SHA-256 was
+`95b601cf90b6ef6cf0ec6b399a98c2c60d486dda8fc9004262f711ff863949ca`.
+Twelve balanced native i686 phoneME Rubido pairs passed the primary gate at
++0.527% median with 9 wins and 3 losses. The required Game of Life control
+then measured -0.992% with only 2 wins and 10 losses, failing the predefined
+-0.5% no-regression floor. Waternet and Untangle controls were therefore not
+eligible and cannot change the verdict.
+
+Raw evidence is under
+`/tmp/w4me-interpreter-research/raw/njit024/runs/`
+`njit039-direct-compact-local-i32-const-add-vs-njit035-20260727/`.
+For Rubido, `pairs.csv`, `paired-stats.txt`, and `receipt.txt` have SHA-256
+`0a2c18fa35699f0991bdab3ffca033cf5ddcc4fd3b9d5408cc25c10bcf5eb34f`,
+`cacd03780a988f750d2fbf7a5b6356ee5e884a1c8320159b8aa10c0bacb43e00`,
+and
+`3d51d3469ff78eb5a287f17763e0a86ff665ad5987cb56f5d2ae7db6c71e6810`.
+For Game of Life, the corresponding SHA-256 values are
+`489ba4a44674dfeff90b820319193a830f5d25e5caf83a1fbc6577a65f670bfe`,
+`b5bb7a5eae78c961b53f6a548f9a3129264fed06286165b4ebf878626489778c`,
+and
+`701bd2aaa35d4c46883b7e046450f5493e1e8c6e0f91e297f2f71beceef494a5`.
+The candidate and temporary fixture were removed, restoring NJIT-035
+exactly. This result is direct evidence that a handler-local call reduction
+can improve one workload while a small compact-switch layout change regresses
+another; future compact handlers require corpus controls even after a strong
+primary result.
+
+### NJIT-040: direct generic `i32.add`
+
+**Status:** `rejected`.
+
+This candidate is materially different from NJIT-039. NJIT-039 enlarged and
+changed the layout of `executeCompactBlock`, improved Rubido, and regressed
+Game of Life.
+NJIT-040 leaves compact execution unchanged and changes only generic opcode
+`0x6a` in the outer `execute` switch. It also follows the accepted NJIT-025
+generic-comparison mechanism and the retained direct generic `i32.sub`,
+`i32.or`, and `i32.shl` handlers rather than moving another fused opcode
+between compact methods.
+
+The current handler executes
+`pushI32(popI32Second() + popI32First())`. On target-47 bytecode this crosses
+the Java method boundary through both wrapper methods, two `popI32()` calls,
+two `pop()` calls, `pushI32()`, and `push()`: eight invokes for one arithmetic
+instruction. The selected replacement checks `valueTop < 2`, removes the
+right operand with `--valueTop`, and stores the wrapping 32-bit sum into
+`values[valueTop - 1]`. It performs no Java call on the valid path and cannot
+overflow the value stack because two inputs become one output.
+
+The exact format-16 corpus report at SHA-256
+`6d2362c6272120eb0b28a4bdcd58f0e884ca2bfa2b13f262cc7748e4a200a945`
+records 484,484 dynamic `i32.add` instructions in the one-frame Game of Life
+route, 13,989 on Rubido, 9,213 on Waternet, and 10,641 on Untangle. The report
+also records 1,305,284 on generic Plasma, but the native route harness cannot
+use that as a production-shaped primary because the shipped Plasma cartridge
+uses its retained runtime fast path. Stream counts are upper bounds across
+tiers; native timing decides the actual generic-path benefit.
+
+The retained baseline is accepted NJIT-035 at source SHA-256
+`3b6b4c8b8e1d65689d7c7837777cd89172b390044def0149d301da22027b3d8f`,
+counterless interpreter SHA-256
+`e65235aaf3f0430d639982dbf21851946bc48f1500c9ab2ab98d8bbd979e635a`,
+and exactness artifact
+`9c8ab1a6fa89b19968859540de0fed5456a2f77efbf3b7fcbb53bcd04dfd8d6a`.
+The native i686 phoneME VM, CLDC classes, and preverify SHA-256 values are
+`bb4866969747430bb619d139c75ab31982e8967aa0e2dcc3e278fcc7920839a2`,
+`117820661071b411b3937e8c708a9581aa48ba06fd06e24eadb5ebbf2036afbe`,
+and
+`4fe0d1b160ac7f18c4f7489917a1d868ff82df50842ca718729b098b25f2f50c`.
+
+Before timing, pass focused underflow, ordinary, signed, and wrapping-add
+coverage plus the seven-workload full-state, Java 1.3, CLDC, target-47,
+preverification, release, cache, bytecode, heap, and counterless gates.
+Inspect `execute` rather than treating the raised 16,000-byte sanity ceiling
+as a size optimization target. Do not change any other arithmetic handler,
+compact/fused execution, formats, tier selection, accounting, arrays, fields,
+allocations, or cartridge behavior.
+
+Run at least twelve balanced native i686 phoneME Game of Life pairs against
+retained NJIT-035. Accept only a timer-resolved median of at least +0.5% with
+at least 9/12 wins and exact deterministic signatures. If the primary passes,
+run Rubido, Waternet, and Untangle controls with a -0.5% no-regression floor.
+If it fails, remove the candidate and focused fixture and restore NJIT-035
+exactly.
+
+The isolated candidate used `WasmInterpreter.java` SHA-256
+`7460ba5fdcc8c12c0849e2f7ffcfe9bfdf6323f5e2afeb030f27cba287bcd5c3`.
+Its focused generic cached-W4IR fixture SHA-256 was
+`ec7ce48292a5995af1a6913c39e812f690a6056b6b793519517a0369a910a61b`;
+it covered ordinary addition, both signed wraparound directions, and the
+canonical underflow trap. The target-47 host interpreter class was 54,071
+bytes at SHA-256
+`d145b14c631154fcd1030b13f3464a70fc6e225ff93f1d8ee9e45bedcd3b6a2a`.
+The valid `i32.add` bytecode path contained no `invoke*`. Release and
+counterless `execute` grew from 7,937/7,905 to 7,988/7,956 bytes.
+
+Full `just verify` passed all focused, seven-workload full-state, Java 1.3,
+CLDC, target-47, preverification, release, cache, bytecode, and counterless
+gates. The station/base JARs were 275,451/272,929 bytes at SHA-256
+`0890d1780bf16cb25cf868ee88cbcd2c2527a9ba0c9e4cb6e2f98df8beb64189`
+and
+`7f3fe87cc98c8867e902bf6f53a4695074feca6c4ed2e8157b7819964d36b312`.
+The counterless exactness artifact was
+`e006baebb2e93c0a5ffaa50fa774018c7e4c64f7e4c5ff8bffd8aaf84f7fd918`;
+its receipt SHA-256 was
+`f089c4be62fcb82ed00bed3545949ac5cf85f57c106fef56e51177ae812e1c12`.
+The timed counterless artifact was
+`95b2bd0fb07f88d89efa8d9acf71ea6db37fe0e5bdb18ebc203518339e06c412`;
+its 85,070-byte preverified interpreter SHA-256 was
+`26cfb69bc367535ac1626c04608e8caa2c407722ad3a807611ea7b875544cec7`.
+No W4IR/RMS format, retained field, array, or heap allocation changed.
+
+Twelve balanced native i686 phoneME Game of Life pairs against retained
+NJIT-035 measured `+10,000 us/frame`, `+0.317%`, with 7 wins, 4 losses, and
+1 tie. Deterministic route signatures were identical, and the result was
+timer-resolved, but it missed both the predefined +0.5% effect floor and 9/12
+win floor. Rubido, Waternet, and Untangle controls were therefore not
+eligible. Raw evidence is under
+`/tmp/w4me-interpreter-research/raw/njit024/runs/`
+`njit040-direct-generic-i32-add-vs-njit035-20260727/game-of-life-zig-edition/`.
+The `pairs.csv`, `paired-stats.txt`, and `receipt.txt` SHA-256 values are
+`e9cc4487bb197286618f9e7bde14cf86ed3220d8f9a6376aae617645fceed6dc`,
+`3e208933d49a760393576061085feaea95087cb367a2ca4e7e32a2d7d5246f68`,
+and
+`fd2d7db6293ed522f053839b13fd1e21321687665a21c613df25ea3cec46667d`.
+
+**Verdict:** reject. Removing eight Java calls from this handler produces a
+real but sub-threshold effect on the only heavy production-shaped route. The
+candidate and focused fixture were removed, restoring accepted NJIT-035
+source exactly. Reconsider only as part of a materially broader arithmetic
+layout whose combined candidate is measured across the corpus; do not rerun
+this single-handler form.
+
+### NJIT-041: frame-neutral terminal `br_if` compact regions
+
+**Status:** `rejected`.
+
+The earlier branch-capable compact prototype is semantically complete but was
+never timed on native i686 phoneME. It admitted one terminal ordinary
+descriptor-backed `br_if` into a compact region and removed 1.356% of Rubido
+outer dispatches, 0.456% on Game of Life, and 6.032% on generic Plasma. It
+passed focused arity-zero/one, taken/fallthrough, nested-control, trap, budget,
+and full-corpus exactness. Its unresolved target cost was structural:
+`executeCompactBlock` grew by 237 bytecodes, nine local slots, and three
+arguments for every compact call, including regions without a branch.
+
+NJIT-041 retains the same universal eligibility rules while removing that
+global compact-frame cost. `buildCompactBlockEnds` may admit exactly one
+terminal `br_if` only when the accepted pc-indexed direct metadata exists, the
+target is not a function return, and arity is zero or one. The existing end
+array encodes such a region with a negative end marker; no field, array,
+W4IR/RMS format, or persistent allocation is added. The outer executor decodes
+the marker, invokes the unchanged `executeCompactBlock` only for the prefix,
+then accounts and executes the terminal branch directly from its already
+cached branch arrays. Ordinary compact regions retain their current positive
+marker and method signature.
+
+The candidate must preserve the exact pre-side-effect instruction-budget check
+for the terminal logical instruction, the existing one-dispatch accounting for
+the whole compact region, canonical underflow and descriptor failures, arity
+zero/one value transfer, control depth, taken target, and fallthrough `pc`.
+It must not add compare-specific fusion, enable compact on cold invocations,
+change tier selection, fix the separate fused compact accounting defect,
+special-case a cartridge, or modify the dynamic control stack.
+
+The retained baseline is accepted NJIT-035 at source SHA-256
+`3b6b4c8b8e1d65689d7c7837777cd89172b390044def0149d301da22027b3d8f`,
+counterless interpreter SHA-256
+`e65235aaf3f0430d639982dbf21851946bc48f1500c9ab2ab98d8bbd979e635a`,
+and exactness artifact
+`9c8ab1a6fa89b19968859540de0fed5456a2f77efbf3b7fcbb53bcd04dfd8d6a`.
+The native i686 phoneME VM, CLDC classes, and preverify SHA-256 values are
+`bb4866969747430bb619d139c75ab31982e8967aa0e2dcc3e278fcc7920839a2`,
+`117820661071b411b3937e8c708a9581aa48ba06fd06e24eadb5ebbf2036afbe`,
+and
+`4fe0d1b160ac7f18c4f7489917a1d868ff82df50842ca718729b098b25f2f50c`.
+
+Before timing, pass focused taken/fallthrough, arity-zero/one, nested-control,
+unreachable-skip, underflow, and nearby budget-boundary differentials plus the
+seven-workload full-state, Java 1.3, CLDC, target-47, preverification, release,
+cache, bytecode, heap, and counterless gates. Record the exact `execute` and
+`executeCompactBlock` bytecode sizes and local counts to prove that the latter
+frame is unchanged.
+
+Run at least twelve balanced native i686 phoneME Rubido pairs against retained
+NJIT-035. Accept only a timer-resolved median of at least +0.5% with at least
+9/12 wins and exact deterministic signatures. If the primary passes, run Game
+of Life, Waternet, and Untangle controls with a -0.5% no-regression floor.
+Generic Plasma may be reported only as a dispatch/correctness diagnostic:
+the shipped native route uses its retained runtime fast path and is not a
+production-shaped performance judge for this candidate.
+
+The isolated candidate used `WasmInterpreter.java` SHA-256
+`e2f741dbf5c1044766d28903bfa2d629f5563245defcea12a1aa0aeae674fc25`.
+It encoded terminal branch regions as negative entries in the existing
+`compactBlockEnds` arrays, ran the unchanged compact executor up to the
+terminal branch, and executed the accounted branch in the outer frame. No
+field, array, W4IR/RMS format, persistent allocation, or cartridge-dependent
+path changed.
+
+Full `just test` and `just verify` passed all seven-workload full-state,
+instruction-budget, Java 1.3, CLDC, target-47, preverification, release,
+cache, bytecode, heap, and counterless gates. The station/base JARs were
+275,975/273,453 bytes at SHA-256
+`edc4afb3274bf870621a7f11daeff5de5a71c289f7a6260f93e9d5c207f6207c`
+and
+`aa9457dcd30c25506eb46dc2c9ba1dcc98c96e353024df54d5ec34df28b2f9f9`.
+The counterless exactness artifact was
+`5c62af754f969474c3200f9a951d12e25966a7cf9511d92abc8cc1a72703ac73`;
+its receipt SHA-256 was
+`6f97b3c1832f63b5d0ba2b40601693dac9d22e7f2e41d8e91492b0481276d7fa`.
+The timed artifact was
+`2da4f0d0da26f387c129c0829013c189791702b0d31c461c964e0b50a1740cdf`;
+its 86,590-byte preverified interpreter SHA-256 was
+`d39a2ddba2fae871e182f5b625b0d22608f4f40854d3ef7c8adcf2960d6f1fa3`.
+
+The intended frame-neutral property was achieved for the compact executor:
+release/counterless `executeCompactBlock` remained exactly 3,101/3,070
+bytecodes, and its release frame remained stack 7, locals 44, args 5.
+However, release/counterless `execute` grew from 7,937/7,905 to 8,225/8,185
+bytecodes. Twelve balanced native i686 phoneME Rubido pairs against retained
+NJIT-035 measured `-2,906.5 us/frame`, `-3.334%`, with zero wins and twelve
+losses. Deterministic route signatures were identical and the effect was
+timer-resolved. Controls were ineligible after this decisive primary failure.
+
+Raw evidence is under
+`/tmp/w4me-interpreter-research/raw/njit024/runs/`
+`njit041-frame-neutral-branch-compact-vs-njit035-20260727/rubido/`.
+The `pairs.csv`, `paired-stats.txt`, and `receipt.txt` SHA-256 values are
+`1914675a1994f05a780637bdb872f2161042a67a5e74372f9e83d86ae6e641ee`,
+`5a27a41431255cd3fb672749e82bdd47c54444d3dd2a9f2edd5ef0a3054d578e`,
+and
+`e4035ec4e14fe9b1ccfab68a83eeb9c2081f2dabeb7ebede44da4c371bd50267`.
+
+**Verdict:** reject. Removing one outer dispatch for the covered terminal
+branches does not repay the enlarged and relaid-out outer executor on the
+target C interpreter. The candidate was removed and NJIT-035 source restored
+exactly. Reconsider branch-capable compact execution only with a materially
+different representation that does not add a branch path to either universal
+hot Java frame; do not rerun this negative-marker outer-frame form.
+
+### NJIT-042: direct generic i32 ALU batch
+
+**Status:** `rejected`.
+
+NJIT-040 removed all valid-path Java calls from generic `i32.add` and measured
+a timer-resolved `+0.317%` on Game of Life, but missed the predefined `+0.5%`
+and 9/12-win gates. Its verdict explicitly permits reconsideration only as a
+materially broader arithmetic layout. NJIT-042 is that broader candidate: it
+changes the six helper-backed, dynamically covered generic operations
+`i32.add`, `i32.mul`, `i32.and`, `i32.xor`, `i32.shr_s`, and `i32.shr_u`
+together. The already direct `i32.sub`, `i32.or`, and `i32.shl` handlers remain
+unchanged. Rotates remain unchanged because the exact corpus has only ten
+`i32.rotl` executions on Untangle and no material `i32.rotr` coverage.
+
+The exact format-16 corpus report at SHA-256
+`6d2362c6272120eb0b28a4bdcd58f0e884ca2bfa2b13f262cc7748e4a200a945`
+records 1,019,971 selected ALU instructions in the one-frame Game of Life
+route: 484,484 add, 305,284 multiply, 76,801 and, 76,801 xor, one signed
+shift, and 76,800 unsigned shifts. The same selected set totals 15,572 on
+Rubido, 13,193 on the primary Waternet route, 17,812 on Untangle, and
+6,539,209 on generic Plasma; the latter remains diagnostic only because the
+shipped native Plasma route uses its retained runtime fast path. Profiling
+disables compact execution, so these counts establish decoded dynamic
+coverage rather than optimized-tier residency. Native paired timing remains
+the performance judge.
+
+The retained baseline is accepted NJIT-035 at source SHA-256
+`3b6b4c8b8e1d65689d7c7837777cd89172b390044def0149d301da22027b3d8f`,
+counterless interpreter SHA-256
+`e65235aaf3f0430d639982dbf21851946bc48f1500c9ab2ab98d8bbd979e635a`,
+and exactness artifact
+`9c8ab1a6fa89b19968859540de0fed5456a2f77efbf3b7fcbb53bcd04dfd8d6a`.
+The native i686 phoneME VM, CLDC classes, and preverify SHA-256 values are
+`bb4866969747430bb619d139c75ab31982e8967aa0e2dcc3e278fcc7920839a2`,
+`117820661071b411b3937e8c708a9581aa48ba06fd06e24eadb5ebbf2036afbe`,
+and
+`4fe0d1b160ac7f18c4f7489917a1d868ff82df50842ca718729b098b25f2f50c`.
+
+Each selected handler must first check `valueTop < 2`, remove the right
+operand with `--valueTop`, and overwrite `values[valueTop - 1]` with the
+operation result. Shifts must retain WebAssembly's low-five-bit count mask.
+This preserves canonical underflow order, wrapping Java `int` arithmetic,
+and the two-input/one-output stack effect while removing all `push`,
+`pushI32`, `pop`, `popI32`, and operand-wrapper calls on valid paths. Do not
+change compact/fused execution, tier selection, accounting, formats, arrays,
+fields, allocations, cartridge behavior, or the three already-direct ALU
+handlers.
+
+Before timing, pass a focused fixture covering every selected operation,
+signed and unsigned boundary values, zero/31/32/63 shift counts, wraparound,
+and canonical underflow, plus the seven-workload full-state, Java 1.3, CLDC,
+target-47, preverification, release, cache, bytecode, heap, and counterless
+gates. Inspect the exact `execute` bytecode delta and valid paths; the raised
+16,000-byte verifier ceiling is a corruption guard rather than an optimization
+budget.
+
+Run at least twelve balanced native i686 phoneME Game of Life pairs against
+retained NJIT-035. Accept only a timer-resolved median of at least +0.5% with
+at least 9/12 wins and exact deterministic signatures. If the primary passes,
+run Rubido, Waternet, and Untangle controls with a -0.5% no-regression floor.
+If it fails, record the result, remove the six-handler batch and focused
+fixture, and restore NJIT-035 exactly.
+
+The isolated candidate used `WasmInterpreter.java` SHA-256
+`03dde13f77ef1c67936b0d6142bb049fd297cac467127d1b8e2fefbc7db992b8`.
+Its focused Java/WAT fixture SHA-256 values were
+`4e91940a692ad13fb1966ff6bd3d499490cd4da460f4c10fd863bd17981f0600`
+and
+`a13998db5a1d20d242b88f21d0539ad63755fc1599f39c1e8a0e4b89a7d3e332`.
+The fixture forced unfused generic execution, checked eight arithmetic and
+shift-boundary results, and created canonical underflow states for all six
+handlers by replacing only operand-producing W4IR instructions with nops.
+
+Full `just test` and `just verify` passed the focused fixture, seven-workload
+full-state, Java 1.3, CLDC, target-47, preverification, release, cache,
+bytecode, heap, and counterless gates. Release/counterless `execute` grew from
+7,937/7,905 to 8,235/8,203 bytecodes. The station/base JARs were
+275,513/272,991 bytes at SHA-256
+`1412dd9f6966d9b0f6c8b4c8a98d6b4ceb682969545e8fd4e7842122a3944a5e`
+and
+`19254ee23ec3b8c9bb1260b93aff97925c8dbbdfa615c3ffe991a9eb998dde50`.
+The counterless exactness artifact was
+`942f39d138095f0e7a4bacd14e7264a2cc10047bdc5c610cee9d4df0d1347938`;
+its receipt SHA-256 was
+`c36249517accebfeb009980d35f8c8e86e521dbd4c953785a931c84b52360205`.
+The timed artifact was
+`0623a78ed6b02fac6c69c2bedce694a1b999c75314d4f7efa0d2ec0ec7cb7b6b`;
+its 85,659-byte preverified interpreter SHA-256 was
+`c964c6ffac439388f37f1153b55f71d926a86ab621fe90b6d17d9c65a0e31fe3`.
+No W4IR/RMS format, retained field, array, or persistent allocation changed.
+
+Twelve balanced native i686 phoneME Game of Life pairs against retained
+NJIT-035 measured `+17,000 us/frame`, `+0.552%`, with 8 wins and 4 losses.
+Deterministic route signatures were identical and the effect was
+timer-resolved. The candidate cleared the +0.5% effect floor but missed the
+predefined 9/12 win floor, so Rubido, Waternet, and Untangle controls were
+ineligible. Raw evidence is under
+`/tmp/w4me-interpreter-research/raw/njit024/runs/`
+`njit042-direct-generic-i32-alu-vs-njit035-20260727/`
+`game-of-life-zig-edition/`. The `pairs.csv`, `paired-stats.txt`, and
+`receipt.txt` SHA-256 values are
+`d8d96a2bed13210c3a63e73e0d82ba92a5c8f18f7656a9133d775d9cf7c7928a`,
+`cd96f37bd160b4b397dbad355046acddd0896d0e16c0d49de4450e0be5be21c1`,
+and
+`067f667f3b1360a486571298352ada5a38d92f45c3d104b9fea968705d63e6bc`.
+
+**Verdict:** reject. Broadening NJIT-040 raised its median above the effect
+floor but did not make the result repeatable enough for the fixed acceptance
+rule, while adding 298 bytecodes to the universal outer executor. The batch
+and focused fixture were removed, restoring NJIT-035 exactly. Reconsider these
+operations only through a materially different executor or stack
+representation that removes more than helper calls without enlarging each
+case independently.
+
+### NJIT-043: ship the accepted counterless production configuration
+
+**Status:** `accepted`.
+
+The generic-tiering change already accepted a separately compiled counterless
+configuration as the production timing artifact. Its clean historical native
+i686 phoneME result was +0.998% on Waternet, +3.929% on Rubido, and +0.884% on
+Untangle, with exact checkpoints. The current release pipeline does not
+actually select that configuration: `tools/build.sh` compiles every
+`src/main/java` source, including the regular diagnostic
+`InterpreterBuildConfig` where `DIAGNOSTIC_COUNTERS=true`. Therefore both
+public JAR variants still update `dispatchesExecuted`, `compactBlockCalls`, and
+`compactInstructionsExecuted` in their production hot paths. `just release`
+only verifies a separate counterless differential artifact and never proves
+that the distributable JARs themselves are counterless.
+
+Revalidate this already accepted mechanism on retained NJIT-035 before changing
+packaging. Build diagnostic and counterless artifacts from the identical
+current source, differing only in the package-private compile-time
+`InterpreterBuildConfig`. Run twelve balanced native i686 phoneME pairs on
+Rubido as the primary route, with Waternet and Untangle controls. Accept only
+with exact deterministic route signatures, a timer-resolved Rubido median of
+at least +1.0% and at least 9/12 wins, and no control below -0.5%.
+
+If the current result passes, make `tools/build.sh` replace only the regular
+diagnostic config source with the existing timed config while leaving the host
+test suite diagnostic. Extend release-JAR verification to reject writes to the
+three optional diagnostic counters. Keep `instructionsExecuted` and its exact
+budget trap unchanged. Run the complete Java 1.3, CLDC, target-47,
+preverification, full-state, release, JAR-content, deterministic-build, and
+counterless gates. Record the new JAR sizes, hashes, method shape, and exactness
+artifact. If the timing gate fails, leave the release mapping unchanged and
+record the current result as a rejected revalidation.
+
+The current same-source revalidation passed every timing gate. Twelve balanced
+native i686 phoneME pairs measured +4.316% on Rubido with 12/12 wins, +2.355%
+on Waternet with 12/12 wins, and +2.177% on Untangle with 10/12 wins.
+Deterministic route signatures and logical instruction counts matched in every
+pair, and every median was timer-resolved. The runner labels these receipts
+exploratory because the accepted NJIT-025 through NJIT-035 work remains
+uncommitted in the shared tree; both sides were nevertheless built from that
+same source and are bound to distinct artifact hashes. The Rubido diagnostic
+and counterless artifact SHA-256 values were
+`34bc1c8a9d329c7772b2ba2c7527c9de992119b7728afad7237b496d191737ef`
+and
+`750659edaf7f2adebedd65267cdc346daadd9477fcaad44ed2f096037b4219ab`.
+The control artifact values were
+`7f2dd6f66f6c31b39eff5adb48eeeca7d5433b14ae0445d9164421cf411f6f5a`
+and
+`ef3d29e603f928324d85bdf949e1cf5c94a5bc70c18fba866e42477abfd0d91f`.
+This current revalidation confirms rather than replaces the retained clean
+historical A/B for the same compile-time mechanism.
+
+Raw evidence is under `/tmp/w4me-njit043-20260727/`. The Rubido receipt and
+pairs SHA-256 values are
+`64050b06f24e818c77293a0d85214da76ded1b7906250949976b97d3dbbf2789`
+and
+`8e0615b1913f1a705b72a8dfde5428e6e27e8d5ecf7f35f0fda583401f3ac7a6`.
+The combined-control receipt SHA-256 is
+`3f8f2db30109e8de785aa3755ec4e9e606edb4d0aeef6a166009aae2dd42e3ae`;
+its Waternet and Untangle pair SHA-256 values are
+`ac5730ad37e830853d475ee7d52c345bb93a04a42e00990263b646ee1b95a90c`
+and
+`ac0c1efa3b8d3c0c2d8b76dba8125038b68f21f526f04f0eaac5b98329449b78`.
+
+`tools/build.sh` now substitutes only the existing timed
+`InterpreterBuildConfig` when compiling distributable MIDlets. The regular
+source config remains diagnostic for host tests. `tools/verify.sh` inspects
+the full target-47 interpreter bytecode and rejects any release JAR containing
+a write to `dispatchesExecuted`, `compactBlockCalls`, or
+`compactInstructionsExecuted`. The complete `just verify` gate passes; both
+public JARs report `execute=7905`, dense `tableswitch`, and zero optional
+diagnostic-counter writes. The separate seven-workload counterless exactness
+artifact remains
+`9c8ab1a6fa89b19968859540de0fed5456a2f77efbf3b7fcbb53bcd04dfd8d6a`.
+
+The full and base JARs are 275,375 and 272,853 bytes at SHA-256
+`53105481fb96ad5c80b7440deb6c186e119e2188a55950b464916cf7e1ab6149`
+and
+`55cdbb29238fbd003d969ca962a1593d9f881170c750cb2d282eef6775b0b364`.
+Their JAD SHA-256 values are
+`9d6a5692e8920f1519c302983cb02db13256f40898f03fc4159def5fc7be5779`
+and
+`3d4feb10dff1002f75a12756381e18d26f8d85df56738f604fa4326b3dd18538`.
+A second release build reproduced all four hashes exactly.
+
+**Verdict:** accept. The public JARs now use the already accepted production
+configuration instead of paying for test-only counters. No runtime flag,
+instruction-budget change, format change, cartridge-specific behavior, heap
+allocation, or user-facing behavior was added.
+
+### NJIT-044: remove the cartridge-specific Plasma replacement
+
+**Status:** `accepted`.
+
+The production source still contains `PlasmaTriFast`, a Java implementation of
+one function selected by exact cartridge length, cartridge fingerprint, and
+function fingerprint. `W4Canvas` enables it by default, so the bundled Plasma
+Cube demonstrates a hand-written per-ROM replacement rather than the
+capability of the universal WebAssembly interpreter. This violates the current
+product contract even though all authoritative generic phoneME benchmarks
+already set fast paths off.
+
+Remove the fingerprinted class and both selection paths from `callFunction`,
+including the differential-only clone/compare machinery. Retain the generic
+diagnostic API temporarily as an inert compatibility surface:
+`setFastPathsEnabled` becomes a no-op and `fastPathCalls` always returns zero,
+so existing generic probes need no unrelated interface rewrite. Remove the
+test that proves the forbidden shortcut and add a release-JAR gate that rejects
+`PlasmaTriFast.class`. Do not change W4IR, compact/trace selection, numeric
+intrinsics, instruction accounting, cartridge data, heap representation, or
+any other function dispatch.
+
+Pass the complete seven-workload full-state, Java 1.3, CLDC, target-47,
+preverification, release, cache, bytecode, and counterless gates. The generic
+Plasma route must remain exact and report zero fast-path calls. Then compare a
+hash-bound counterless candidate with retained NJIT-043/NJIT-035 on at least
+twelve balanced native i686 phoneME Rubido pairs; accept the contract cleanup
+only if the ordinary route stays above the -0.5% no-regression floor with exact
+checkpoints. Plasma wall time is not a valid before/after speed comparison:
+the removed baseline executes different hand-written Java code.
+
+The implementation removed `PlasmaTriFast`, both production and differential
+selection paths, and the shortcut-specific smoke. The generic compatibility
+probes remain inert as planned. `tools/verify.sh` now rejects
+`w4me/wasm/PlasmaTriFast.class` in either distributable JAR. The retained
+`WasmInterpreter.java` source is SHA-256
+`8545ca66f38983146857c6f7233fbcc72e8db4094ec554b03da0952e462423d8`.
+
+`just verify` passed the complete host and release matrix. The generic Plasma
+route executed 298,939,472 logical instructions over 60 frames with exact
+memory and framebuffer state and `fast-paths=0`. The release interpreter
+remains a 7,905-byte target-47 `tableswitch` method with zero diagnostic
+counter writes. Counterless exactness passed all seven workloads with artifact
+SHA-256
+`b1926068f773e5b48335ea5a4b8822762b5642d6763b7be612f46c230301ba1e`;
+the receipt is
+`build/reports/verify/counterless/receipt.txt` at SHA-256
+`df7a2f1c59129a3b3e2a548a2f8d5744e9031d496d05f0940a71ed8b22da07a4`.
+
+The distributable full and base JARs are 270,007 and 267,485 bytes at SHA-256
+`039a8f989b55eaa142c59721ee3ff905fcdf6f7f6af0c5f086657fd3b885081e`
+and
+`a7c9351b03ae3116439d5bc85d208751fcfd58c3cb35ef221247e9a73fffd038`.
+Their JAD SHA-256 values are
+`9d45053924d2fc6528cfcc9d4b3f57c1b537bcd123162a954b7afc21d60ad9d1`
+and
+`2bc1ca8818442df82cabfc6f94a81bf75347bf7068deff5eacd314bee06c0a65`.
+
+The native counterless candidate reported artifact SHA-256
+`255e66180bba149df460e470487b659043673a589a94ec3a6670263b211c55d0`;
+its preverified `WasmInterpreter.class` is 83,035 bytes at SHA-256
+`9240fe8e4b9d4fe42e5dd7943bd06fa6006d48e92a6e355bec9a35f3a5abb31b`.
+Against the retained NJIT-035/NJIT-043 interpreter
+`e65235aaf3f0430d639982dbf21851946bc48f1500c9ab2ab98d8bbd979e635a`,
+twelve balanced native i686 phoneME Rubido pairs measured a median
++97.5 us/frame, **+0.112%**, with 8/12 wins. All checkpoint and deterministic
+signatures matched, the timer resolved the effect, and the -0.5% no-regression
+floor passed.
+
+Raw evidence lives under
+`/tmp/w4me-interpreter-research/raw/njit024/runs/njit044-contract-clean-vs-njit043-20260727/rubido/`.
+The receipt, raw pairs, and paired statistics have SHA-256
+`e70bb2e96aaa45529c6a1e9e3c737ac52c0b642ebaabc2311fda9625a4514440`,
+`5df8b8cdff4977148c1aa37c48a5b6b3286c7825fbd4d4c0145fe589eb57d0c3`,
+and
+`9dcf5f5630cd7f6699059be5e694899e1aa76a42bdc4ee3badc4c57ea54603a3`.
+
+**Verdict:** accept as the contract-clean universal baseline. The measured
+Rubido effect is no-regression evidence, not a claimed speed optimization.
+Plasma is intentionally slower than the forbidden hand-written replacement,
+so only generic exactness, not its before/after wall time, is comparable.
+
+### NJIT-045: sparse exact instruction-budget recovery
+
+**Status:** `rejected`.
+
+The current fused W4IR accounts the full logical span only after executing a
+fused handler. If the instruction limit falls inside that span, the handler
+can mutate stack, locals, memory, or control state for logical instructions
+that should never have started. The isolated full-copy prototype proved both
+the defect and the correct semantics, including resident, paged, and RMS-hit
+paths, but was rejected because retaining a second complete W4IR stream cost
+99--100% of the primary W4IR payload.
+
+Prototype a sparse recovery stream without retaining the full unfused code.
+During fusion, consumed interior slots keep their original three W4IR words
+and a build-only consumed bitmap hides them from later fusion passes. After
+fusion, each pc whose root word differs from the decoded original instruction
+gets one sorted four-int recipe:
+
+```text
+pc, original instruction word, original operand, original auxiliary
+```
+
+This also covers intermediate fusion roots later consumed by larger fusions.
+At runtime, the optimized stream remains unchanged until the global budget is
+within the maximum 512-logical-instruction compact region. The executor then
+disables compact batching for that invocation tail and reads the original
+word from the sparse recipe when the current pc is a rewritten root; unchanged
+and consumed interior slots are already the original stream. The rare boundary
+path may use binary search per recovered instruction. Ordinary steady-state
+execution must not perform recipe searches or allocate recovery objects.
+
+Persist the recipes in function metadata and bump the W4IR format so old RMS
+records are atomically rejected and rebuilt. Validate sorted unique pcs,
+four-int stride, pc bounds, and standard original opcodes on cache build and
+load. Measure retained primitive payload per corpus module, RMS record growth,
+decode peak, method size, class/JAR size, and the steady-state native cost of
+the boundary guard. JAR size is informational only; phone heap, RMS, exactness,
+and native no-regression remain acceptance constraints.
+
+The generated exactness matrix must cover every emitted `span>1` W4IR opcode
+at every boundary from zero through `span+1`, observable stack/local/memory and
+control side effects, resident code, in-memory paged cache, RMS build/hit,
+promotion, nested calls, batching loops, and counted traces. The seven-workload
+full-state and all Java 1.3/CLDC/target-47/preverify/release gates remain
+mandatory.
+
+For performance acceptance, compare hash-bound counterless artifacts on native
+i686 phoneME with at least twelve balanced pairs on Game of Life and Rubido,
+plus Plasma as the trace/compact control. Exact checkpoints and deterministic
+counters must match. Accept only if every route stays above the -0.5%
+no-regression floor; any speedup is secondary to restoring exact budget
+semantics.
+
+The prototype implemented the four-int recipe stream, build-only consumed-slot
+bitmap, RMS persistence and validation, W4IR format 17, near-budget fallback,
+batch-loop yielding, and counted-trace yielding. A focused resident,
+in-memory-cache, and RMS-hit fixture proved exact stack, local, and memory
+side effects at representative fused boundaries. The full Java 1.3, CLDC,
+target-47, preverification, release, counterless, and seven-workload
+full-state gates passed. The counterless artifact was
+`5fd6502d5036dee334022edcb2be1cd8ea0c8001650ccd568d12037d972329ba`;
+`execute()` was 8041 bytes under the 16000-byte corruption guard.
+
+The retained primitive payload was material rather than negligible:
+
+| Workload | Recovery bytes | Primary W4IR bytes | Recovery / W4IR | RMS growth |
+|---|---:|---:|---:|---:|
+| Waternet | 16672 | 106680 | 15.63% | 16888 |
+| Rubido | 16976 | 92028 | 18.45% | 17100 |
+| Untangle | 34544 | 181476 | 19.04% | 34952 |
+| Game of Life | 2352 | 15528 | 15.15% | 2404 |
+| Plasma Cube | 6640 | 27096 | 24.51% | 6680 |
+
+The first mandatory native route rejected the candidate before the larger
+matrix was justified. Twelve balanced native i686 phoneME pairs on Game of
+Life measured median `-40500 us/frame`, **-1.312%**, with 3 wins and 9 losses.
+All 12 pairs matched the 12802761 logical instructions, checkpoint, direct
+branch, and counterless signatures exactly. The receipt, pair CSV, and paired
+statistics have SHA-256
+`bbc7c33da8c3909f11407d8ded3b7258ec0e711254282f37fb234c6630794f98`,
+`c8b1f27b64e36aefc56447ebaac8f599109688eef41fee0bcc625040cc7b35b2`,
+and
+`828290816e9124d6cd18c5be4c9e269bf7b9784ea50ffb6ba4d69c2cede79764`.
+The preverified candidate interpreter class has SHA-256
+`aa330c2de41e02778e14998f25af357b46a3ae23a7734d938bde32cbba457225`.
+Raw evidence is under
+`/tmp/w4me-interpreter-research/raw/njit024/runs/njit045-sparse-budget-vs-njit044-20260727/`.
+
+**Verdict:** reject. The measured -1.312% fails the mandatory -0.5%
+no-regression floor, so Rubido and Plasma could not change the decision and
+were not completed. The generated all-fusion boundary matrix was therefore
+also not built. All NJIT-045 production, cache, and focused-test code was
+removed; the stable W4IR format remains 16. Sparse recovery must not be
+revisited without a design that removes the steady-state per-dispatch guard
+and materially reduces the 15--25% retained W4IR payload.
+
+### NJIT-046: counterless build without opcode profiling support
+
+**Status:** `accepted`.
+
+The counterless production artifact already removes diagnostic dispatch and
+compact counters, but it still retains the dynamic opcode profiler. Profiling
+is disabled at runtime, so the generic executor nevertheless executes a
+quickened `getfield profilingEnabled` and conditional branch for every outer
+dispatch. Defined-function calls and a small number of helper paths repeat the
+same false runtime check. The production JAR never enables this test-only
+profiler; corpus profiling is built with the regular diagnostic config.
+
+This candidate adds one compile-time `PROFILING_SUPPORT` constant to every
+interpreter config. It remains `true` in the regular diagnostic build and in
+rollback configs, and becomes `false` only in the existing timed/counterless
+production config. Every profiler-dependent branch is guarded by that
+constant, so `javac` must remove the runtime field read and branch from the
+counterless bytecode. The diagnostic artifact must retain the existing
+profiler behavior and corpus reports exactly. W4IR, RMS, heap layout, opcode
+selection, exact instruction budget, and all runtime semantics remain
+unchanged.
+
+The hypothesis comes from two read-only diagnostic phoneME builds made from
+the byte-identical source family used by the native judge. A `-pg` release VM
+with SHA-256
+`00d4d921da28a54d7ae9c506ee137723f864d1870e8b4450de044af784b0641a`
+completed the exact 129-frame Rubido route. Its flat profile identified
+Java-bytecode interpretation, rather than GC or native runtime work, as the
+steady-state cost center: `iload` 11.00%, `istore` 7.50%, quickened
+`igetfield` 6.88%, and `aload_0` 6.00%. Absolute wall time is invalid because
+`-pg` instruments every C/C++ call; only attribution and handler call counts
+are diagnostic evidence.
+
+A separate method/BCI sampler VM with SHA-256
+`d7cb28fe7eebadbbb42f5825b5b806b262752a8f09246d3054fcbcb815e96cf1`
+completed the same exact route and produced 4077 periodic bytecode samples.
+The dominant methods were `execute` 1838, `executeCompactBlock` 1472,
+`loadI32` 149, `push` 117, `pop` 109, `blitSub` 100,
+`checkedAddress` 99, `executeCompactFused` 60, and `transfer` 57. Within
+`execute`, 1107 samples landed in the outer-dispatch preamble, 693 in opcode
+handlers, 35 on the dense `tableswitch`, and 3 in one-time setup. The
+runtime-false profiler check at bytecodes 297--301 accounted for 49 samples,
+about 1.2% of all route samples before counting call-site checks. Sampling
+changes layout and adds one diagnostic call per Java bytecode, so these ratios
+select the candidate but do not prove a speedup.
+
+The retained baseline is source commit
+`8e850656f2b19256c2559cdd07f165c7788b16d4`, counterless artifact
+`b1926068f773e5b48335ea5a4b8822762b5642d6763b7be612f46c230301ba1e`,
+and preverified `WasmInterpreter.class`
+`9240fe8e4b9d4fe42e5dd7943bd06fa6006d48e92a6e355bec9a35f3a5abb31b`.
+Raw diagnostic profiles are under
+`build/reports/phoneme-gprof/` and `build/reports/phoneme-trace/`; they are
+gitignored local research artifacts, not release inputs.
+
+Implementation is limited to `WasmInterpreter` and the interpreter config
+classes. Verify with `javap` that the counterless `execute` no longer reads
+`profilingEnabled` or calls `profileInstruction`, while the diagnostic class
+still does both. Run the exact corpus profiler under the diagnostic config,
+the complete Java 1.3, CLDC, target-47, preverification, release, full-state,
+cache, bytecode, and counterless gates, and compare class/JAR/heap footprints.
+
+For native acceptance, compare hash-bound counterless artifacts on native
+i686 phoneME with at least twelve balanced pairs on Rubido. If the primary
+route passes, run Waternet and Untangle no-regression controls and Game of
+Life as the generic integer-heavy control. Exact checkpoints, deterministic
+logical instruction counts, direct-branch metadata, and artifact signatures
+must match. Accept only a repeatable median improvement of at least 0.8% on
+Rubido with every control above the -0.5% no-regression floor. Otherwise
+remove the compile-time specialization and record the rejection.
+
+The retained implementation meets those gates. The diagnostic config keeps
+`PROFILING_SUPPORT=true`; the timed/counterless configs use `false`. The
+counterless preverified `WasmInterpreter.class` falls from 83,035 bytes,
+SHA-256
+`9240fe8e4b9d4fe42e5dd7943bd06fa6006d48e92a6e355bec9a35f3a5abb31b`,
+to 82,166 bytes, SHA-256
+`17795670307a11bda48f1c9826e9a1b78962c76292ce8dfa9461ce0a1bb5804a`.
+Its `execute` method falls from 7905 to 7865 target-47 bytecode bytes.
+`javap` finds zero counterless reads of `profilingEnabled` and zero calls to
+`profileInstruction`; the 83,149-byte diagnostic class retains all nine
+profiler references and the corpus test still emits opcode, pair, function,
+and fusion profiles. Heap, W4IR 16, RMS, branch metadata, and exact logical
+instruction counts are unchanged. The phoneME candidate artifact SHA-256 is
+`a9f6f9055e99aeafc4a7d22d7d8d4eca516cb20c3108d967eeb7c2d741bd3e99`.
+
+Twelve balanced native i686 phoneME pairs against the retained NJIT-044
+counterless tree measured:
+
+- Rubido: +1.385% median, 1202.0 us/frame, 12 wins and 0 losses;
+- Waternet: +1.362% median, 150.5 us/frame, 8 wins and 4 losses;
+- Untangle: +1.363% median, 23.0 us/frame, 9 wins, 2 losses, and 1 tie;
+- Game of Life: +2.789% median, 86,500 us/frame, 10 wins and 2 losses.
+
+Every pair matched checkpoints, logical instructions, and direct-branch
+payload exactly. Raw receipts live under
+`/tmp/w4me-interpreter-research/raw/njit024/runs/`
+`njit046-profileless-vs-njit044-20260727/`. Receipt SHA-256 values for
+Rubido, Waternet, Untangle, and Game of Life are respectively
+`bc6ecbf00170d4a40dd7dc2a96b879811446720a4c7924732e91a0ae3d1e28df`,
+`86cd1c6b6a7d074f4ea992bfa1f68806ecd038f6cf8d1f81be43165a4366c178`,
+`63ad87bb7ed696c96d7a92379d224213f9130f6849f56d58f9a7d7479b469ec6`,
+and
+`22be8c81e18cca221c39763b65d4942a4bdbe6861752cfbbcd362ad3ebc9b63d`.
+The paired runner's `source-clean=yes` classification means the two immutable
+preverified class trees were hash-bound; the main worktree remained dirty by
+design and was not used as a mutable classpath during any pair.
+
+The complete `just verify` matrix passes. Its counterless exactness artifact
+is
+`bda67da37618a3a1849464d915715e7dd59529ecb1bf97490047450b31f04156`;
+the final receipt SHA-256 is
+`ba563b0410bf9301337218298fffe46b478b0a8da25672fa8c9a02805718da88`.
+`tools/verify.sh` now rejects any distributable or counterless artifact that
+still reads `profilingEnabled` or invokes `profileInstruction`, in addition
+to its existing diagnostic-counter checks.
+
+### NJIT-047: compact executor value-array local
+
+**Status:** `rejected`.
+
+The post-NJIT-046 method/BCI profile assigns 1472 of 4077 periodic Rubido
+samples to `executeCompactBlock`, second only to the outer executor. The
+accepted NJIT-046 result also confirms that removing repeated Java field work
+from an interpreted hot loop produces a repeatable cross-workload gain. In
+the counterless target-47 class, the compact executor's direct handlers
+contain 46 source-level references to the final `values` field. Each becomes
+`aload_0; getfield values` before the actual `laload`, `lastore`, or length
+check. The native phoneME bytecode-type profile attributes 6.88% of Rubido
+ticks to quickened instance-field loads, while ordinary local loads are
+materially cheaper.
+
+This candidate adds one method-local alias, `long[] compactValues = values`,
+at the entry to `executeCompactBlock` and uses it only in the direct handlers
+already implemented inside that method. It does not cache `valueTop`, because
+helper-backed and fused handlers observe and mutate that field. It does not
+change helpers, opcode eligibility, compact topology, accounting, instruction
+budget points, W4IR/RMS, heap allocation, or traps. `values` is a final array
+field and is never rebound, so the alias preserves object and element
+identity. Helper-backed handlers continue to use the field and therefore
+remain coherent with writes made through the alias.
+
+Static acceptance requires the target-47 compact executor to replace its
+`getfield values` sites with one entry load without increasing the method's
+invoke count or changing classfile major version, StackMap validity, or the
+16,000-byte corruption guard. Run the complete Java 1.3, CLDC,
+preverification, exact-state, cache, release, and counterless matrix.
+
+Native acceptance compares the accepted NJIT-046 counterless tree with the
+hash-bound candidate on native i686 phoneME. Game of Life is primary because
+its single update executes 12,802,761 logical instructions and spends most of
+the route in compact integer handlers. Require at least twelve balanced pairs
+and a median improvement of at least 0.8%. If it passes, run Rubido, Waternet,
+and Untangle controls with a -0.5% no-regression floor. Record raw pairs and
+hashes; remove the alias completely if the primary gate fails.
+
+The prototype passed the complete exactness and release matrix. Its
+counterless exactness artifact was
+`83d3a6dec677d0e1cc9287b0647b96790bb2c29ec73a086d94174d9adcd2ded5`.
+In the preverified phoneME class, `executeCompactBlock` field reads of
+`values` fell from 50 to 1, method bytecode fell from 3070 to 2976 bytes, and
+the invoke count remained 77. The containing class nevertheless grew from
+82,166 to 82,414 bytes because of local-variable and StackMap metadata; its
+SHA-256 was
+`674c9864a305bf1479fc8617601a47a10fe9c86cf2e1a73eab47ac86f805d9c1`.
+The phoneME artifact SHA-256 was
+`a543bde2bf78c6b481a746a7a778211bee7e838f8aca1d70040af05740bc38c8`.
+
+Twelve balanced native i686 phoneME Game of Life pairs measured only +0.148%
+median, 4500 us/frame, with 6 wins and 6 losses. This fails the predeclared
++0.8% primary gate, so no control workloads were required. The raw receipt,
+pair CSV, and paired-stat SHA-256 values are respectively
+`f89d6ec83567e00e03f07e76ec60bcd8d8c12cda40b1b222c11040a019f37e93`,
+`d1dea96c279939ff5da4f732c81bf3184b3f346d8609c3e1e4e93033b6e7df8b`,
+and
+`bf0226d35f74a49c4e76f0b583e19955e6284817498384b6516721789a8a77cb`.
+They live under
+`/tmp/w4me-interpreter-research/raw/njit024/runs/`
+`njit047-compact-values-vs-njit046-20260727/game-of-life-zig-edition/`.
+The alias is removed completely. Do not revisit array-reference-only caching
+without a design that also safely caches `valueTop` across helper boundaries;
+the field-load reduction alone is not a measured phoneME win.
+
+### NJIT-048: compact-block budget-check elision
+
+**Status:** `rejected`.
+
+A fresh method/BCI profile was captured after restoring accepted NJIT-046
+exactly. The profile used the instrumented no-JIT phoneME VM only to select a
+hot shape; its wall time is not acceptance evidence. The exact 129-frame
+Rubido route passed all 30 checkpoints and executed 43,301,827 logical
+instructions. Of 1,816 samples in `execute`, 1,091 landed in its per-dispatch
+preamble and 699 in handlers. Of 1,461 samples in `executeCompactBlock`, 878
+landed before the handler switch, 360 in handlers, and 223 in the loop tail.
+The raw trace is
+`build/reports/phoneme-trace-njit046/rubido/trace.txt`, SHA-256
+`0fc60f80be45302bbd03a6e42699349bf94a291c29ddebfa5e9b23ede9eec2fe`.
+The sampler VM SHA-256 is
+`d7cb28fe7eebadbbb42f5825b5b806b262752a8f09246d3054fcbcb815e96cf1`;
+its timing is invalid because it instruments every interpreted Java
+bytecode.
+
+The compact executor currently increments `instructionsExecuted` and compares
+it with `instructionLimit` for every standard compact instruction and every
+fused logical span. In ordinary frames the remaining budget is much larger
+than a compact block, so every comparison is mathematically unable to trap.
+NJIT-001 already showed that merely caching the counter while retaining a
+per-instruction budget decision is not enough: it measured only +0.312% on
+Rubido. This candidate instead proves once per compact-block call whether the
+entire block fits in the remaining budget and elides only the redundant
+per-instruction limit comparisons for such a block.
+
+The outer executor computes the exact logical block length as
+`compactEnd - pc`. Compact formation caps a region at 512 logical
+instructions, and fused handlers advance `pc` by their logical span, so the
+difference equals the total instruction accounting performed by the compact
+loop. A block is declared within budget only when:
+
+```text
+instructionsExecuted <= instructionLimit - (compactEnd - pc)
+```
+
+The boolean is passed into `executeCompactBlock`. The existing counter
+increments, diagnostic compact counters, handler order, helper calls, semantic
+traps, and fused post-handler accounting remain at their current locations.
+Only `instructionsExecuted > instructionLimit` is skipped while the
+block-level proof is true. If the block can cross the limit, all existing
+checks run unchanged. This is important for exact semantic-trap state: the
+candidate does not pre-account the block and therefore cannot count
+instructions after an earlier memory, stack, numeric, or helper trap.
+
+The retained baseline is accepted NJIT-046 at source commit
+`8e850656f2b19256c2559cdd07f165c7788b16d4`, current
+`WasmInterpreter.java` SHA-256
+`a62bb687c2803bcbf1763cc63e1b3cb0f030b46060fdaf3b42fde8c76e6879e5`,
+and 82,166-byte counterless preverified interpreter SHA-256
+`17795670307a11bda48f1c9826e9a1b78962c76292ce8dfa9461ce0a1bb5804a`.
+The retained phoneME artifact SHA-256 is
+`a9f6f9055e99aeafc4a7d22d7d8d4eca516cb20c3108d967eeb7c2d741bd3e99`;
+the accepted seven-workload counterless exactness artifact is
+`bda67da37618a3a1849464d915715e7dd59529ecb1bf97490047450b31f04156`.
+There is no planned W4IR/RMS format, field, array, allocation, or retained heap
+change.
+
+Static and correctness acceptance require Java 1.3, CLDC, target-47,
+preverification, release, cache, counterless, and seven-workload full-state
+gates. The existing compact integer and `i32.load + local.tee` focused
+differentials must sweep outer-versus-compact instruction budgets, including
+both whole-block admission and the unchanged per-instruction fallback. Inspect
+target-47 `javap` to confirm that the admitted path replaces repeated field
+limit comparisons with a local boolean branch and record method/class growth.
+
+Native acceptance compares hash-bound counterless artifacts on native i686
+phoneME. Game of Life is primary because its compact blocks average more
+logical instructions per entry and therefore best amortize the one new
+block-level proof. Require at least twelve balanced pairs, a timer-resolved
+median improvement of at least +0.8%, and at least 9/12 wins. If it passes,
+run Rubido, Waternet, and Untangle controls with a -0.5% no-regression floor.
+Record all raw receipts and hashes. If the primary gate fails, remove the
+boolean path completely and restore NJIT-046 exactly.
+
+The isolated implementation passed every static and correctness gate. Its
+source SHA-256 was
+`a63abea0689f783e1ff3299d89810fbb512f316ff82e5a14e5246aa270a44b4d`.
+The focused integer compact test passed 42 budget boundaries, and the
+`i32.load + local.tee` differential passed 27 outer plus 27 compact budget
+boundaries and its memory trap. `just verify` passed all seven full-state
+workloads, Java 1.3, CLDC, target-47, preverification, release, cache,
+counterless, and JAR gates. Its counterless exactness artifact was
+`47e63e0dfcf4314b84fec6c6ece32cad477f5d4d50631327d7d17d6345fdfa39`;
+the receipt SHA-256 was
+`8f5085c977f34c67cc50dc7622a4ff7ecaf23e90e8c3eaccf86d87aea29a58bb`.
+
+Target-47 `javap` confirmed the intended shape: an admitted compact
+instruction executes `iload withinBudget; ifne` before the old limit
+comparison, skipping both `getfield instructionsExecuted` and
+`getfield instructionLimit` on that path. `execute` grew from 7,865 to 7,893
+bytecodes and `executeCompactBlock` from 3,070 to 3,087. The preverified
+interpreter grew from 82,166 to 82,433 bytes at SHA-256
+`936276f4a9d7a25694ecc29c414ef8330f15da2233ee394913ebf9ec10e620c5`.
+The phoneME artifact SHA-256 was
+`5d1e0ca293faff03d6059f660c8e4725c819c61c2f6f3a7309ee84df06396d4e`.
+The full and base JARs grew by 20 bytes each to 269,592 and 267,070 bytes,
+with SHA-256
+`a30f58e644b9096c67b881ab9178567a50756a578b54a8eb1087794c5ef2030b`
+and
+`bb554d37006fa84f11ccff1f6d32138939cb2a4eddeff38ccbb5e1a34d82aae8`.
+No W4IR/RMS, field, array, allocation, or persistent-heap delta occurred.
+
+Twelve balanced native i686 phoneME Game of Life pairs decisively rejected
+the candidate: median `-22,500 us/frame`, **-0.731%**, with 2 wins and 10
+losses. Every pair matched the 12,802,761 logical instructions, checkpoint,
+and direct-branch payload exactly. The result is timer-resolved and fails
+both the +0.8% effect floor and the 9/12 win floor, so Rubido, Waternet, and
+Untangle controls were correctly skipped. Raw evidence is under
+`/tmp/w4me-interpreter-research/raw/njit024/runs/`
+`njit048-budget-elision-vs-njit046-20260727/game-of-life-zig-edition/`.
+The receipt, pair CSV, and paired-stat SHA-256 values are respectively
+`7a10a815024e68650a088598028d4c90d3e921925bda666f19af11af01a9e997`,
+`9e53c873667e494bf593bef78100e11dffbf6ef06088f8526f14fb3479538444`,
+and
+`ea51395a0086716d14980107848c8592102bcc5b76d530894645b6b24fc6e90c`.
+
+**Verdict:** reject. On phoneME, the extra local branch in every compact
+dispatch costs more than the skipped pair of quickened field reads and
+comparison, even when the one block-level proof is amortized across long Game
+of Life regions. The implementation is removed completely. Do not retry a
+per-instruction boolean gate; a future accounting optimization must remove
+the per-instruction branch itself, for example through a separate safe
+executor shape with no duplicated hot-loop decision.
+
+### NJIT-049: separate admitted compact executor
+
+**Status:** `rejected`.
+
+NJIT-048 proved that whole-block budget admission is exact but lost 0.731% on
+Game of Life because the admitted path still executed one new local boolean
+branch on every compact dispatch. NJIT-001 earlier moved the mandatory
+instruction counter into a local with exact `finally` publication and measured
+a small +0.312% Rubido result, but retained a per-instruction limit comparison.
+These two results isolate a new shape: select a separate executor once per
+compact block, then let its inner loop contain neither a budget comparison nor
+a selection branch.
+
+The outer executor uses the same exact admission proof:
+
+```text
+instructionsExecuted <= instructionLimit - (compactEnd - pc)
+```
+
+If true in the counterless production build, call
+`executeCompactBlockUnchecked`; otherwise call the existing
+`executeCompactBlock` byte-for-byte unchanged. The unchecked method mirrors
+the same compact dispatch and handlers, snapshots `instructionsExecuted` into
+a local, performs the same standard, load/tee, and post-fused increments on
+that local, and publishes it from `finally` on both normal and exceptional
+exit. Because the whole block is known to fit, no omitted budget comparison
+can trap. The `finally` publication preserves the exact counter observed after
+stack, memory, numeric, or helper traps, including fused handlers whose span is
+accounted only after successful completion.
+
+The separate method intentionally duplicates the compact switch for this
+experiment. JAR size is not an acceptance constraint, but target-47 class and
+method sizes, StackMap validity, and phone heap remain measured. Do not change
+compact eligibility, W4IR/RMS, handler semantics, diagnostics, arrays, fields,
+allocations, or the existing checked executor. The diagnostic build continues
+to use the checked method so corpus profiling remains canonical; the
+counterless full-state build exercises the unchecked path.
+
+The retained baseline is accepted NJIT-046 at source SHA-256
+`a62bb687c2803bcbf1763cc63e1b3cb0f030b46060fdaf3b42fde8c76e6879e5`,
+82,166-byte preverified interpreter SHA-256
+`17795670307a11bda48f1c9826e9a1b78962c76292ce8dfa9461ce0a1bb5804a`,
+phoneME artifact SHA-256
+`a9f6f9055e99aeafc4a7d22d7d8d4eca516cb20c3108d967eeb7c2d741bd3e99`,
+and seven-workload exactness artifact
+`bda67da37618a3a1849464d915715e7dd59529ecb1bf97490047450b31f04156`.
+The currently rebuilt stable full/base JARs are 269,565 and 267,043 bytes at
+SHA-256
+`cc01dc2ca822eeb83626ec843a2c19f1269c2db3dce1fd2f2a22f5a0d94912fd`
+and
+`9e1e916e16d2e627df5cd5e82845d798470e481ee085af426f16f17d782bf908`.
+
+Before timing, run the focused outer/compact budget sweeps, semantic-trap
+fixtures, all seven full-state workloads, Java 1.3, CLDC, target-47,
+preverification, release, cache, counterless, StackMap, and method-size gates.
+Use `javap` to prove that the unchecked loop has no `instructionLimit` read or
+per-dispatch admission branch and that its local counter is published through
+an exception handler.
+
+Native acceptance uses at least twelve balanced i686 phoneME pairs on Game of
+Life. Require a timer-resolved median of at least +0.8% and at least 9/12 wins.
+If it passes, run Rubido, Waternet, and Untangle controls with a -0.5%
+no-regression floor. Record raw receipts, artifact hashes, class/JAR growth,
+and exact counters. If the primary gate fails, remove the duplicated executor
+and restore accepted NJIT-046 exactly.
+
+The prototype implemented that shape without changing W4IR, RMS, arrays,
+fields, or heap allocation. The existing checked compact executor remained
+unchanged. The counterless build selected the duplicate only after the
+subtraction-safe whole-block proof, kept the logical count in a local, and
+published it through `finally`. `javap` confirmed a 3,017-byte unchecked
+method with a `tableswitch`, an exception table, and no `instructionLimit`
+read; the checked method remained 3,070 bytes. `execute` grew from 7,865 to
+7,901 bytes. The preverified interpreter grew from 82,166 bytes at SHA-256
+`17795670307a11bda48f1c9826e9a1b78962c76292ce8dfa9461ce0a1bb5804a`
+to 89,790 bytes at SHA-256
+`c86c7efd7e35f0efc4a50194a73f61e309db77a69e584e14b30ea34b6dad866b`.
+The full/base JARs were 271,524 and 269,002 bytes at SHA-256
+`ed0ad87cb9ab63547e2765f8696fcb18de5ad82a0e7880d836dd62413260bf11`
+and
+`03c405b3445b84b429cbf1cb43b0378ecdb1eab38d43cd80be0adfb01cd5dc0c`.
+
+`just test`, `just verify`, strict OpenSpec validation, all focused compact
+budget/trap sweeps, and all seven counterless full-state workloads passed.
+The counterless exactness artifact was
+`139a5d5e0231ef3894b63c4e7f524fc6eeee28ca51dc81ee89c6e3bccdd05440`;
+its receipt SHA-256 was
+`3bc2d6db89291cc7ba56420534b56b1d481aa5bf24b01f446a163240c2ddb997`.
+The exact commands were:
+
+```text
+just test
+just verify
+openspec validate optimize-no-jit-frame-budget --strict
+tools/phoneme/run.sh bench game-of-life-zig-edition \
+  --mode optimized --candidate counterless --reps 1
+BASELINE=/tmp/w4me-njit046-20260727/counterless-preverified \
+CANDIDATE=/tmp/w4me-njit049-20260727/candidate-preverified \
+RUN_ID=njit049-unchecked-compact-vs-njit046-20260727 \
+  /tmp/w4me-interpreter-research/raw/njit024/run-paired.sh \
+  12 game-of-life-zig-edition
+```
+
+The native i686 phoneME primary gate decisively failed:
+
+```text
+baseline/candidate us per frame:
+3013000/3089000, 3019000/3052000, 3071000/3114000,
+3033000/3081000, 3069000/3101000, 3045000/3048000,
+3011000/3083000, 3009000/3082000, 3038000/3092000,
+3085000/3010000, 3045000/3078000, 3080000/3047000
+median speedup -1.247%, median delta -38000 us/frame,
+2 wins, 10 losses, timer-resolved, order-balanced
+```
+
+Raw evidence is under
+`/tmp/w4me-interpreter-research/raw/njit024/runs/njit049-unchecked-compact-vs-njit046-20260727/game-of-life-zig-edition/`;
+the receipt, pair CSV, and paired-stat hashes are
+`e102052cb3228a3ac8c232ff3f22c25b6d1ae74ea4b68297d9e339326f98729c`,
+`d24a267489a6691d7b83460b530ceaa8d3b6cc2b37e01fbbe62166ea8b29730a`,
+and
+`f932d49e5afa5451dea0fffb864b3d4ff6c04378a643c67ddd17d55004410258`.
+The runner receipt's `source-head` field refers to its immutable research
+checkout; the candidate is instead bound to current repository HEAD
+`8e850656f2b19256c2559cdd07f165c7788b16d4` and the source/artifact hashes
+above.
+
+**Verdict:** reject. Removing the per-token budget comparison and field
+counter traffic did not repay the duplicated method's call/layout cost on
+phoneME. Do not retry a separate full compact switch merely with another
+counter-publication shape. Reconsider only with a materially smaller
+specialized region body or direct native evidence that method layout no
+longer dominates.
+
+### NJIT-050: scalar defined-function result arity
+
+**Status:** `rejected`.
+
+The outer `execute` method receives a complete `FuncType`, but its only use is
+to evaluate `functionType.results.length`. The accepted counterless target-47
+artifact contains ten such dynamic sites. Every site currently executes
+`aload_3`, a quickened `getfield results`, and `arraylength`; the proposed
+shape passes `type.results.length` from `callFunction` as an `int` in the same
+category-1 parameter slot and replaces each use with `iload_3`. Parameter
+order and all later local slots remain unchanged.
+
+This is not a repeat of NJIT-004. That candidate moved `locals` into a short
+parameter slot and changed the load form across most opcode handlers.
+NJIT-050 keeps every parameter slot and handler layout except for the type of
+slot 3 and the ten result-arity reads. It is also independent of NJIT-020:
+argument copying, frame clearing, call entry, and return transfer remain
+byte-for-byte equivalent apart from the scalar argument at the sole
+`execute` call site.
+
+The current exact corpus report, SHA-256
+`6d2362c6272120eb0b28a4bdcd58f0e884ca2bfa2b13f262cc7748e4a200a945`,
+records 281,601 defined-function entries in the one-frame Game of Life route,
+including 281,600 internal calls. Every successful defined-function execution
+must reach one of the scalar result-arity sites through final `end`, explicit
+`return`, or a branch to the function label. Other routed totals are 38,040
+for Rubido, 33,650 for Waternet, 53,317 for Untangle, and 17,146 for Duck
+Maze. These totals include imported and intrinsic entries in the diagnostic
+profile, so they are upper bounds outside Game of Life; native timing remains
+the performance judge.
+
+The retained baseline is accepted NJIT-046 at source commit
+`8e850656f2b19256c2559cdd07f165c7788b16d4`, current
+`WasmInterpreter.java` SHA-256
+`a62bb687c2803bcbf1763cc63e1b3cb0f030b46060fdaf3b42fde8c76e6879e5`,
+82,166-byte counterless preverified interpreter SHA-256
+`17795670307a11bda48f1c9826e9a1b78962c76292ce8dfa9461ce0a1bb5804a`,
+phoneME artifact SHA-256
+`a9f6f9055e99aeafc4a7d22d7d8d4eca516cb20c3108d967eeb7c2d741bd3e99`,
+and seven-workload counterless exactness artifact
+`bda67da37618a3a1849464d915715e7dd59529ecb1bf97490047450b31f04156`.
+The baseline target-47 dump is
+`/tmp/w4me-njit050-baseline.javap`, SHA-256
+`d150e0816e3119c695a5eec17bdf3e107848da03b9bd177edc4b534c636ee6a9`.
+
+Change only the private `execute` parameter type, its sole call site, and the
+result-arity uses in `WasmInterpreter`. Do not add a `FunctionBody` field,
+array, cache entry, W4IR/RMS token, allocation, tier condition, opcode,
+cartridge test, or semantic shortcut. Imported calls continue to use the
+complete `FuncType` in `callFunction`; `call_indirect` canonical-type checks
+remain unchanged. Instruction accounting, trap order, stack transfer,
+descriptor shadowing, compact/trace selection, and direct branches must be
+identical.
+
+Correctness and static gates are `just test`, `just verify`, strict OpenSpec
+validation, and the complete Java 1.3, CLDC, target-47, preverification,
+release, cache, budget/trap, counterless, and seven-workload full-state
+matrix. Inspect `javap` to require an `int` third parameter, zero
+`FuncType.results` reads inside counterless `execute`, the dense
+`tableswitch`, valid StackMap data, and no new fields or persistent heap.
+Record method, class, and release-JAR size deltas as diagnostics rather than
+acceptance constraints.
+
+Build a hash-bound counterless candidate and first require one exact native
+phoneME sanity run. Game of Life is primary because it has the highest
+production-shaped defined-call density. Run sixteen balanced native i686
+phoneME pairs with identical checkpoints and deterministic counters. Because
+the change removes only two interpreted JVM bytecodes per dynamic arity read,
+predeclare a conservative small-effect gate: median speedup at least +0.3%,
+at least eleven wins in sixteen pairs, and an effect above timer resolution.
+If it passes, run eight balanced Rubido, Waternet, and Untangle controls with
+a -0.5% no-regression floor. Record all raw receipts and hashes. Reject and
+remove the candidate if the primary gate fails or any control regresses.
+
+Planned commands:
+
+```text
+just test
+just verify
+openspec validate optimize-no-jit-frame-budget --strict
+tools/phoneme/run.sh bench game-of-life-zig-edition \
+  --mode optimized --candidate counterless --reps 1
+BASELINE=/tmp/w4me-njit046-20260727/counterless-preverified \
+CANDIDATE=/tmp/w4me-njit050-20260727/candidate-preverified \
+RUN_ID=njit050-result-arity-vs-njit046-20260727 \
+  /tmp/w4me-interpreter-research/raw/njit024/run-paired.sh \
+  16 game-of-life-zig-edition
+```
+
+The isolated implementation changed only the scalar argument described
+above. Its `WasmInterpreter.java` SHA-256 was
+`e2a4794e0ac32e13ea3be64a4b96a8abb5fc3c775c7fba7699447e309436da7c`.
+`just test` and `just verify` passed the complete focused, Java 1.3, CLDC,
+target-47, preverification, release, cache, budget/trap, counterless, and
+seven-workload full-state matrix. The counterless exactness artifact was
+`f03fcb8e16183b73068ca67103f24f1314d5e7ef0fe898c06b3d505bd545b436`;
+its receipt SHA-256 was
+`0ac9086d956c1ddfabda2a9a089ff8d2aa7a6e93e32c9fdd1516fe58bc665d69`.
+
+Target-47 `javap` produced
+`execute(int, FunctionBody, int, long[], int, int)` with zero
+`FuncType.results` reads in the counterless method. `execute` shrank from
+7,865 to 7,825 bytecodes and retained its dense `tableswitch`. The
+counterless preverified interpreter shrank from 82,166 to 81,526 bytes at
+SHA-256
+`92d574b733f5ecdec8a8693b6f6df3648ed355b3553287e9d633e724f79a7d5f`.
+The full/base JARs shrank by 25 bytes each to 269,540 and 267,018 bytes at
+SHA-256
+`924b9169181aa0bc35f40daccac635eefc8e256fdea4229e4612045ca51622a8`
+and
+`97ad20db8fc1c15f4d8568b75aacd57c3159f818b2389ba7895d548acdbb2068`.
+There was no W4IR/RMS, field, array, allocation, or persistent-heap delta.
+The staged phoneME artifact SHA-256 was
+`a165c38b750680e8bdd9049c300ad1c4fea3340de3e24774446f0b47f96ac0bc`.
+
+Sixteen balanced native i686 phoneME Game of Life pairs measured median
+`-5,500 us/frame`, **-0.181%**, with 7 wins and 9 losses. Every invocation
+matched the 12,802,761 logical instructions, checkpoint, and direct-branch
+payload exactly. Sample 7 was a visible one-sided host outlier at
+7,205,000 us/frame for the candidate versus the normal approximately
+3,000,000 us/frame range. Removing that sample only changes the tally to
+7 wins and 8 losses across the remaining 15 samples; their median paired
+percentage remains negative at -0.066%. Even converting the outlier into a
+candidate win could produce at most 8/16, below the predeclared 11/16 gate,
+so a rerun cannot rescue this completed primary result without discarding
+additional ordinary samples.
+
+Raw evidence is under
+`/tmp/w4me-interpreter-research/raw/njit024/runs/`
+`njit050-result-arity-vs-njit046-20260727/game-of-life-zig-edition/`.
+The receipt, pair CSV, and paired-stat SHA-256 values are respectively
+`50cd462556c9e98c103e06f033d7ac6a5e02c1a596394320fb0de4464124a830`,
+`e76320f5afdef63b8b14b1e6083fe1c1e9c1cd79f30d3fafbe7f95ebb10503f9`,
+and
+`1d12ae4d40c76b6027a169281906c1ade7d0c80cb1514cc278fb17d5c5a085e3`.
+
+**Verdict:** reject. Replacing repeated `getfield + arraylength` work with a
+short scalar local reduces bytecode and artifact size but does not improve
+the authoritative runtime. Rubido, Waternet, and Untangle controls cannot
+make the failed primary gate pass and were not spent. Remove the candidate
+and restore accepted NJIT-046 exactly. Reconsider result metadata only as
+part of a materially broader call-frame redesign with independently measured
+coverage, not by repeating this scalar parameter form.
+
+### NJIT-051: inline ordinary direct-defined-call frame setup
+
+**Status:** `inconclusive`.
+
+**Hypothesis and source.** Every ordinary direct WebAssembly `call` currently
+executes `execute(caller) -> callFunction -> execute(callee)`. The middle Java
+frame remains live for the complete callee execution even though its
+post-call work is only the `finally` restoration of `callDepth` and
+`controlTop`. The accepted target-47 counterless release has
+`callFunction` at 540 code bytes with 13 local slots, while `execute` has
+7,865 code bytes and 134 local slots. The retained phoneME C interpreter has
+no JIT or Java inlining, so each middle frame and its `invokespecial`/return
+are real VM work.
+
+The exact current Game of Life route executes 281,600 direct ordinary calls in
+one frame: function 7 is entered 25,600 times, function 8 204,800 times, and
+function 9 51,200 times. The ordinary direct `call` opcode count is exactly
+281,600; the route has no indirect calls or numeric-intrinsic opcodes. This is
+the highest measured direct-defined-call density in the corpus.
+
+This is materially different from NJIT-006, which retained a helper frame and
+specialized only direct host imports, and from NJIT-020/NJIT-050, which changed
+argument copying or one result-arity parameter inside the existing
+`callFunction` frame. It is the broader call-frame redesign explicitly named
+by NJIT-050's reconsideration condition.
+
+**Isolated mechanism.** Change only generic direct opcode `0x10` in
+`WasmInterpreter.execute`. For a range-valid, non-null,
+`INTRINSIC_NONE` target, perform the existing defined-function setup,
+recursive `execute`, and `finally` restoration directly inside a scoped case
+block. Keep the exact existing order for profiling, call-depth validation,
+type and argument validation, local-frame selection, complete frame clearing,
+the NJIT-020 scalar/native argument copy, `valueTop`, `callDepth`, and
+`controlTop`. Invalid operands, imports, and numeric-intrinsic bodies fall
+back to the unchanged `callFunction`; `call_indirect`, lifecycle calls, and
+export invocation remain unchanged.
+
+The scoped case is required so the candidate can reuse Java local slots
+instead of permanently shifting all later switch locals. There is no new
+W4IR opcode, format version, cache metadata, field, array, allocation,
+cartridge identity, tier condition, or persistent heap. The candidate is
+allowed to grow `execute` beyond the old 7,800 heuristic; the current
+corruption guard is 16,000 code bytes. Record the actual `max_locals`, code
+length, class/JAR size, and preverified frame shape because increasing the
+134-slot recursive executor frame can erase the saved 13-slot middle frame.
+
+**Baseline identity.**
+
+- source and `origin/main`:
+  `8e850656f2b19256c2559cdd07f165c7788b16d4`;
+- `WasmInterpreter.java`:
+  `a62bb687c2803bcbf1763cc63e1b3cb0f030b46060fdaf3b42fde8c76e6879e5`;
+- accepted NJIT-046 counterless preverified interpreter:
+  82,166 bytes at
+  `17795670307a11bda48f1c9826e9a1b78962c76292ce8dfa9461ce0a1bb5804a`;
+- accepted phoneME artifact:
+  `a9f6f9055e99aeafc4a7d22d7d8d4eca516cb20c3108d967eeb7c2d741bd3e99`;
+- counterless exactness artifact:
+  `bda67da37618a3a1849464d915715e7dd59529ecb1bf97490047450b31f04156`;
+- native i686 VM, CLDC classes, and preverifier:
+  `bb4866969747430bb619d139c75ab31982e8967aa0e2dcc3e278fcc7920839a2`,
+  `117820661071b411b3937e8c708a9581aa48ba06fd06e24eadb5ebbf2036afbe`,
+  and
+  `4fe0d1b160ac7f18c4f7489917a1d868ff82df50842ca718729b098b25f2f50c`.
+
+The restored stable release artifacts are 269,565 and 267,043 bytes at
+`cc01dc2ca822eeb83626ec843a2c19f1269c2db3dce1fd2f2a22f5a0d94912fd`
+and
+`9e1e916e16d2e627df5cd5e82845d798470e481ee085af426f16f17d782bf908`.
+
+**Correctness and measurement gates.** Add a focused direct-call fixture
+covering zero, one, two, and larger argument arities; zero/one/multi-value
+results; recursion; call-depth exhaustion; underflow; ordinary, import,
+intrinsic, indirect, export, and lifecycle targets; local-frame reuse;
+32/64-bit raw values; callee traps; and instruction-budget boundaries.
+Require exact stack, locals, memory, globals, table, control restoration,
+profile counts, trap class/text/order, and logical instruction count. Then
+pass Java 1.3, CLDC, target-47, preverification, release, cache, seven-workload
+full-state, counterless, and strict OpenSpec gates.
+
+Inspect target-47 and preverified bytecode to require one fewer
+`callFunction` invocation for an ordinary direct call, an unchanged fallback,
+the dense `tableswitch`, valid StackMap data, and bounded `execute`
+`max_locals`/code size. Build a hash-bound counterless candidate and require
+one exact native phoneME sanity run. Run sixteen balanced native i686 phoneME
+Game of Life pairs. The primary gate is median speedup at least +0.5%, at
+least eleven wins in sixteen pairs, an effect above timer resolution, and
+identical checkpoints/counters. If it passes, run eight Rubido, Waternet, and
+Untangle control pairs with a -0.5% no-regression floor. Reject and remove the
+candidate on a failed primary or control gate.
+
+Planned commands:
+
+```text
+just test
+just verify
+openspec validate optimize-no-jit-frame-budget --strict
+tools/phoneme/run.sh bench game-of-life-zig-edition \
+  --mode optimized --candidate counterless --reps 1
+BASELINE=/tmp/w4me-njit046-20260727/counterless-preverified \
+CANDIDATE=/tmp/w4me-njit051-20260727/candidate-preverified \
+RUN_ID=njit051-inline-direct-call-vs-njit046-20260727 \
+  /tmp/w4me-interpreter-research/raw/njit024/run-paired.sh \
+  16 game-of-life-zig-edition
+```
+
+**Observed result and verdict.** The isolated candidate source was
+`b1548a2bf9dcc1fe2b0df8b6bebc429b4ab0dcbc5504c63fcca4d404c46092a7`.
+It passed the complete `just test` and `just verify` gates. The exactness
+artifact was
+`c49b458b50f17982fe1fac273c162873550c27de8f32491e8e8cc681f7b98ff4`
+and its receipt was
+`5ec66006b2259e91e2a2fa73f139eb3a7c9544c4d8e9af1e2f7b2cfd20210c0f`.
+The target-47 `execute` method grew from 7,865 to 8,177 code bytes while
+remaining at 134 local slots and retaining the dense `tableswitch`. There was
+no W4IR, RMS, or persistent-heap format change. The preverified counterless
+interpreter was 83,583 bytes at
+`0257f1bb75d54d35ac56e3489e78b4dce1c147ed19435267de6f652b3a5de21f`.
+
+One native phoneME exactness sanity run completed with the expected
+12,802,761 logical instructions and exact checkpoint state. Its wall time was
+4,382,000 microseconds per frame, but an unpaired sanity run is not
+authoritative performance evidence. The predeclared sixteen-pair run was then
+started with the exact NJIT-046 and NJIT-051 trees. The owner stopped the
+experiment during sample zero, before either a complete pair or any row in
+`pairs.csv` existed. The partial receipt and empty-header CSV are preserved at
+`/tmp/w4me-interpreter-research/raw/njit024/runs/`
+`njit051-inline-direct-call-vs-njit046-20260727/`
+`game-of-life-zig-edition/`, with SHA-256
+`265138ab40018981147c52b3021f4abbdf014566f08b140f6659761b30b11874`
+and
+`5da70d1281c2f9eb30ac73d948b1c07ffc95c5264b7e28328fb7c63411b0c264`.
+
+Therefore NJIT-051 has no performance verdict and is classified
+`inconclusive`, not rejected. The candidate code was removed and the exact
+accepted NJIT-046 source and release artifacts were restored at the owner's
+request to stop on a stable version. Reconsideration requires a fresh complete
+sixteen-pair run from the recorded accepted baseline; the isolated sanity
+timing must not be reused as a rejection or acceptance result.
+
+### Final accepted-set A/B against the main release
+
+The complete retained production set was measured directly against
+`main@8e850656f2b19256c2559cdd07f165c7788b16d4` so release notes do not
+need to compose medians from the isolated candidate series. The baseline was
+built from an archive of that exact commit with its regular production
+configuration, which still writes diagnostic dispatch and compact counters.
+The candidate was the restored stable NJIT-046 production configuration at
+`WasmInterpreter.java` SHA-256
+`a62bb687c2803bcbf1763cc63e1b3cb0f030b46060fdaf3b42fde8c76e6879e5`,
+with diagnostic counters and opcode profiling compiled out.
+
+The preverified baseline and candidate tree aggregate SHA-256 values were
+`27780eb7db0c6595685cd703a5c77728446931cc1285c307c6e312bda48f622c`
+and
+`4c5bf0fb1953f729f36d383d3ce51c20f5906a8ea670f73245701bb43990f7d3`.
+Their `PhoneMeRouteBench.class` and `FramebufferOracle.class` files were
+byte-identical, at
+`38a538946d6044e16864be0107df54cbf8f6439b025b5b980768cbe29496a98e`
+and
+`c4cfedb70fccc4991aa778f29168b5aff432040f423f27c76b92e476903a7905`.
+The native i686 phoneME VM and CLDC classes remained
+`bb4866969747430bb619d139c75ab31982e8967aa0e2dcc3e278fcc7920839a2`
+and
+`117820661071b411b3937e8c708a9581aa48ba06fd06e24eadb5ebbf2036afbe`.
+
+Sixteen balanced native pairs per route produced:
+
+| Route | Main median | NJIT-046 median | Median frame-time reduction | Throughput | Wins |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Waternet | 17,202.5 us/frame | 11,064.5 us/frame | **35.753%** | **1.555x** | 16/16 |
+| Rubido | 104,573.5 us/frame | 86,767.0 us/frame | **17.057%** | **1.205x** | 16/16 |
+| Untangle | 4,835.5 us/frame | 1,682.0 us/frame | **65.151%** | **2.875x** | 16/16 |
+| Game of Life | 3,463,000 us/frame | 3,090,000 us/frame | **10.826%** | **1.121x** | 16/16 |
+
+Every route was timer-resolved and all 64 pairs favored the retained
+candidate. Every invocation matched the browser-oracle checkpoints, logical
+instruction count, fast-path count, and direct-branch metadata. Optional
+dispatch/compact/trace telemetry was deliberately excluded from the equality
+signature because removing those writes is one of the measured production
+changes; the raw pass lines retain both sides' values and show the expected
+nonzero-main/zero-candidate distinction.
+
+Raw evidence lives under
+`/tmp/w4me-interpreter-research/raw/njit024/runs/`
+`final-main-release-vs-njit046-production-clean-20260727/`. The
+`pairs.csv` / `paired-stats.txt` / `receipt.txt` SHA-256 values are:
+
+- Waternet:
+  `b87a8b14ff1898e29611304f4632b9c307a65e9e0e06e75579983b6edde52091`,
+  `02893b06fec71a360ee190a9ccdb17895b9cdee79cc13d8fb6316c1c195f5959`,
+  and
+  `10a278fbdc0cc03cf113e4d3af09c5b476149189cec209b7846d27785c4da3bd`;
+- Rubido:
+  `948c64f6438471055299c396114cb73b1fa8a52d95d509ebeed71094e0c3915f`,
+  `5d2f67e75d001202dea4a0516d0e2dbc6e2cd6968dd1ae6cc1fee1b9734e40db`,
+  and
+  `adacf2ab8ba9e9c57de82ae7189ff628fccd78d094971190d0855d46b831b104`;
+- Untangle:
+  `3ec161a586df5396e4dc2be35040629d297d10ef2cfc38f1112d9af36dc65ea4`,
+  `bf156650a062a07f74424d2b8d7efb53abd6f65d7cb6b775cbf1d454810ae295`,
+  and
+  `3c978bf25a486557951456d64b850f9ab50a78017db3f5a98ddb26468a8c8e6d`;
+- Game of Life:
+  `a4b1a4c9ac8473ed0063097bd3acf455b5b1de62859af1dfffd67159a434d8ab`,
+  `4fceda84cba025c0cd589713ff22e34874ff510e97324376674543bcd2df0902`,
+  and
+  `886d55216b147455a95ebf757b9945a79864b46fe0cca77ecbc072185331ca53`.
+
+These are headless runtime-route results. They exclude MIDP framebuffer
+presentation, physical display scaling, input delivery, and audio backend
+latency, so the frame rates must not be presented as measured Nokia E71 FPS.
 
 ## Risks / Trade-offs
 

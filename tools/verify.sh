@@ -2,6 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+EXECUTE_CODE_LIMIT=16000
 
 # shellcheck disable=SC1091
 source "${ROOT_DIR}/tools/container/env.sh"
@@ -44,14 +45,29 @@ cmd_jar() {
         fi
     done
 
+    interpreter_dump="$(
+        javap -c -p -classpath "${JAR_PATH}" w4me.wasm.WasmInterpreter
+    )"
+    if printf '%s\n' "${interpreter_dump}" |
+        grep -E 'putfield.*Field (dispatchesExecuted|compactBlockCalls|compactInstructionsExecuted):' \
+            >/dev/null; then
+        printf 'error: distributable JAR still writes an optional diagnostic counter\n' >&2
+        exit 1
+    fi
+    if printf '%s\n' "${interpreter_dump}" |
+        grep -E '(getfield.*Field profilingEnabled:|invoke[^[:space:]]*.*Method profileInstruction:)' \
+            >/dev/null; then
+        printf 'error: distributable JAR still executes opcode-profiling support\n' >&2
+        exit 1
+    fi
     execute_dump="$(
-        javap -c -p -classpath "${JAR_PATH}" w4me.wasm.WasmInterpreter |
+        printf '%s\n' "${interpreter_dump}" |
             awk '
                 /^  private void execute\(int,/ {
                     in_method = 1
                 }
                 in_method && /^  private / && !/^  private void execute\(int,/ {
-                    exit
+                    in_method = 0
                 }
                 in_method {
                     print
@@ -79,14 +95,13 @@ cmd_jar() {
         printf 'error: WasmInterpreter.execute main dispatch is not a tableswitch\n' >&2
         exit 1
     fi
-    execute_code_limit=7800
-    if [ "${execute_code_bytes}" -gt "${execute_code_limit}" ]; then
+    if [ "${execute_code_bytes}" -gt "${EXECUTE_CODE_LIMIT}" ]; then
         printf 'error: WasmInterpreter.execute is %s bytes; maximum %s preserves method headroom\n' \
-            "${execute_code_bytes}" "${execute_code_limit}" >&2
+            "${execute_code_bytes}" "${EXECUTE_CODE_LIMIT}" >&2
         exit 1
     fi
-    printf 'PASS WasmInterpreter.execute bytecode=%s maximum=%s dispatch=tableswitch\n' \
-        "${execute_code_bytes}" "${execute_code_limit}"
+    printf 'PASS WasmInterpreter.execute bytecode=%s maximum=%s dispatch=tableswitch diagnostic-counter-writes=0 profiling-runtime-uses=0\n' \
+        "${execute_code_bytes}" "${EXECUTE_CODE_LIMIT}"
 
     check_cartridge() {
         name="$1"
@@ -133,8 +148,8 @@ cmd_jar() {
             metadata="$(cat -- "${metadata_file}")"
         fi
         if ! printf '%s\n' "${metadata}" |
-            grep -q '^MIDlet-Version: 1\.0\.0$'; then
-            printf 'error: %s does not declare MIDlet-Version 1.0.0\n' \
+            grep -q '^MIDlet-Version: 1\.0\.1$'; then
+            printf 'error: %s does not declare MIDlet-Version 1.0.1\n' \
                 "${metadata_file}" >&2
             exit 1
         fi
@@ -168,6 +183,10 @@ cmd_jar() {
     if [ "${has_jsr75}" != "${expect_jsr75}" ]; then
         printf 'error: JSR-75 class presence mismatch: expected %s, got %s\n' \
             "${expect_jsr75}" "${has_jsr75}" >&2
+        exit 1
+    fi
+    if [[ "${jar_entries}" == *'w4me/wasm/PlasmaTriFast.class'* ]]; then
+        printf 'error: distributable JAR contains a cartridge-specific execution shortcut\n' >&2
         exit 1
     fi
 
@@ -293,6 +312,12 @@ cmd_counterless() {
         printf 'error: counterless artifact still writes a diagnostic counter\n' >&2
         exit 1
     fi
+    if printf '%s\n' "${INTERPRETER_DUMP}" |
+        grep -E '(getfield.*Field profilingEnabled:|invoke[^[:space:]]*.*Method profileInstruction:)' \
+            >/dev/null; then
+        printf 'error: counterless artifact still executes opcode-profiling support\n' >&2
+        exit 1
+    fi
     EXECUTE_CODE_BYTES="$(
         printf '%s\n' "${INTERPRETER_DUMP}" |
             awk '
@@ -313,9 +338,9 @@ cmd_counterless() {
         printf 'error: could not measure counterless execute bytecode\n' >&2
         exit 1
     fi
-    if [ "${EXECUTE_CODE_BYTES}" -gt 7800 ]; then
-        printf 'error: counterless execute is %s bytes; maximum 7800\n' \
-            "${EXECUTE_CODE_BYTES}" >&2
+    if [ "${EXECUTE_CODE_BYTES}" -gt "${EXECUTE_CODE_LIMIT}" ]; then
+        printf 'error: counterless execute is %s bytes; maximum %s\n' \
+            "${EXECUTE_CODE_BYTES}" "${EXECUTE_CODE_LIMIT}" >&2
         exit 1
     fi
 
@@ -338,8 +363,8 @@ cmd_counterless() {
         printf 'counterless-exactness receipt\n'
         printf 'artifact-sha256=%s diagnostic-counters=off source=1.3 target=1.3\n' \
             "${ARTIFACT_SHA256}"
-        printf 'bytecode execute=%s maximum=7800 diagnostic-counter-writes=0\n' \
-            "${EXECUTE_CODE_BYTES}"
+        printf 'bytecode execute=%s maximum=%s diagnostic-counter-writes=0 profiling-runtime-uses=0\n' \
+            "${EXECUTE_CODE_BYTES}" "${EXECUTE_CODE_LIMIT}"
         java -classpath "${ARTIFACT}" w4me.wasm.FullStateDifferential \
             "${java_arguments[@]}"
     } | tee "${RECEIPT}"

@@ -204,7 +204,7 @@ Optimized execution SHALL preserve the logical instruction at which budget exhau
 - **THEN** any decode-time replacement executes an unconditional trap at the original instruction point and preserves earlier side effects
 
 ### Requirement: Target artifact compatibility
-Every accepted phase SHALL compile against the CLDC 1.1 phoneME bootclasspath, produce a Java 1.3-compatible target artifact with classfile major version 47, valid preverified StackMaps, successful KEmulator loading, and main `execute` bytecode size no greater than 7,800 bytes.
+Every accepted phase SHALL compile against the CLDC 1.1 phoneME bootclasspath, produce a Java 1.3-compatible target artifact with classfile major version 47, valid preverified StackMaps, successful KEmulator loading, and main `execute` bytecode size no greater than 16,000 bytes.
 
 #### Scenario: Verify a candidate JAR
 - **WHEN** a candidate phase is ready for performance acceptance

@@ -935,9 +935,37 @@ public final class Wasm4Runtime implements WasmHost {
     }
 
     private void drawHorizontal(byte[] memory, int color, int startX, int y, int endX) {
-        int x;
-        for (x = startX; x < endX; x++) {
-            drawPoint(memory, color, x, y);
+        if (startX >= endX) {
+            return;
+        }
+        int x = startX;
+        int address = FRAMEBUFFER + ((WIDTH * y + x) >> 2);
+        if ((x & 3) != 0) {
+            int packed = memory[address] & 0xff;
+            while (x < endX && (x & 3) != 0) {
+                int shift = (x & 3) << 1;
+                int mask = 3 << shift;
+                packed = (packed & ~mask) | (color << shift);
+                x++;
+            }
+            memory[address] = (byte) packed;
+            address++;
+        }
+        int packedColor = color * 0x55;
+        while (endX - x >= 4) {
+            memory[address] = (byte) packedColor;
+            address++;
+            x += 4;
+        }
+        if (x < endX) {
+            int packed = memory[address] & 0xff;
+            while (x < endX) {
+                int shift = (x & 3) << 1;
+                int mask = 3 << shift;
+                packed = (packed & ~mask) | (color << shift);
+                x++;
+            }
+            memory[address] = (byte) packed;
         }
     }
 

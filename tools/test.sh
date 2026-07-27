@@ -159,14 +159,6 @@ javac \
     -Xlint:-options \
     -classpath "${CLASSES_DIR}" \
     -d "${CLASSES_DIR}" \
-    "${ROOT_DIR}/src/test/java/w4me/wasm/PlasmaTriDifferentialSmoke.java"
-
-javac \
-    -source "${J2ME_SOURCE}" \
-    -target "${J2ME_TARGET}" \
-    -Xlint:-options \
-    -classpath "${CLASSES_DIR}" \
-    -d "${CLASSES_DIR}" \
     "${ROOT_DIR}/src/test/java/w4me/wasm/W4IrV11Smoke.java" \
     "${ROOT_DIR}/src/test/java/w4me/wasm/W4IrV11DifferentialSmoke.java" \
     "${ROOT_DIR}/src/test/java/w4me/wasm/W4IrDirectIntrinsicDifferentialSmoke.java" \
@@ -224,6 +216,7 @@ javac \
     "${ROOT_DIR}/src/test/java/w4me/SoundTestSmoke.java" \
     "${ROOT_DIR}/src/test/java/w4me/TankleSmoke.java" \
     "${ROOT_DIR}/src/test/java/w4me/BlitPlainGeometrySmoke.java" \
+    "${ROOT_DIR}/src/test/java/w4me/HorizontalSpanDifferentialSmoke.java" \
     "${ROOT_DIR}/src/test/java/w4me/RuntimeAbiSmoke.java" \
     "${ROOT_DIR}/src/test/java/w4me/WasmValidationSmoke.java" \
     "${ROOT_DIR}/src/test/java/w4me/WasmW4ExtensionsSmoke.java"
@@ -304,10 +297,6 @@ java -classpath "${CLASSES_DIR}" w4me.Wasm4CorpusReplaySmoke \
     "${ROOT_DIR}/testdata/oracles/game-of-life-zig-edition/disk.csv" \
     "ca57b23b8bda728a6f92848f8981cfb7837c1c389639cc568c29fddca597d4d3" \
     "game-of-life-zig-edition"
-
-java -classpath "${CLASSES_DIR}" w4me.wasm.PlasmaTriDifferentialSmoke \
-    "${ROOT_DIR}/src/main/resources/w4font.bin" \
-    "${ROOT_DIR}/cartridges/plasma-cube.wasm"
 
 java -classpath "${CLASSES_DIR}" w4me.wasm.W4IrV11Smoke \
     "${ROOT_DIR}/cartridges/plasma-cube.wasm"
@@ -427,6 +416,10 @@ java -classpath "${CLASSES_DIR}" w4me.TankleSmoke \
     "${ROOT_DIR}/cartridges/tankle.wasm"
 
 java -classpath "${CLASSES_DIR}" w4me.BlitPlainGeometrySmoke \
+    "${ROOT_DIR}/src/main/resources/w4font.bin" \
+    "${ROOT_DIR}/cartridges/mandelbrot.wasm"
+
+java -classpath "${CLASSES_DIR}" w4me.HorizontalSpanDifferentialSmoke \
     "${ROOT_DIR}/src/main/resources/w4font.bin" \
     "${ROOT_DIR}/cartridges/mandelbrot.wasm"
 

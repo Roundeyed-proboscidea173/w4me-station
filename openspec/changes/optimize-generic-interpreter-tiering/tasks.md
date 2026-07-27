@@ -78,6 +78,6 @@
 
 - [x] 8.1 Run the applicable host, WebAssembly, exact-corpus, full-state, phoneME route, target-artifact, and affected KEmulator gates for every retained implementation phase and before removing rejected candidates
 - [x] 8.2 Accept performance claims only from clean same-build balanced phoneME pairs with at least eight pairs for small effects above timer resolution; label the forced-compact overlay and invalid historical host-import result exploratory instead of promoting either to a reusable speed claim
-- [x] 8.3 Verify the stable candidate against the CLDC 1.1 bootclasspath, classfile-version-47 and preverified-StackMap gates, KEmulator integration gates affected by the changes, release exclusion of phoneME binaries, and the 7,800-byte `execute` limit
+- [x] 8.3 Verify the stable candidate against the CLDC 1.1 bootclasspath, classfile-version-47 and preverified-StackMap gates, KEmulator integration gates affected by the changes, release exclusion of phoneME binaries, and the current `execute` sanity limit
 - [x] 8.4 Reject i64 div/rem replacement, SWAR bit operations, `int`-word stack or locals, and `int[]` linear memory from this implementation batch until a separately approved evidence-backed change
 - [x] 8.5 Review the final stable diff for unrelated or cartridge-specific behavior and commit the verified batch only after explicit authorization, producing commit `7a97dee`

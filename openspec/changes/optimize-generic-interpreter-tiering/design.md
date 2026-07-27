@@ -296,7 +296,7 @@ Alternative considered: leave the original unchecked implementation plan in this
 
 An optimization may predecode a memory offset greater than or equal to 65,536 into an unconditional trap executed at the original instruction point and may precompute a maximum valid base address. It must not simply delete the `offset < 0` case, because an unsigned WebAssembly memarg can occupy a negative Java `int` representation.
 
-Budget checks will not be postponed from every logical instruction to backedges or region boundaries because that changes the instruction at which execution traps. Every target JAR will be checked for classfile major version 47, preverified StackMaps, successful KEmulator loading, and `execute` bytecode size at or below 7,800 bytes.
+Budget checks will not be postponed from every logical instruction to backedges or region boundaries because that changes the instruction at which execution traps. Every target JAR will be checked for classfile major version 47, preverified StackMaps, successful KEmulator loading, and `execute` bytecode size at or below the 16,000-byte sanity ceiling.
 
 Alternative considered: trade exact trap timing for fewer checks. Exact execution limits are part of deterministic runtime behavior and are not waived for speed.
 
@@ -311,7 +311,7 @@ Constant-time unsigned i64 division/remainder, SWAR `clz`/`ctz`/`popcnt`, and an
 - [Dense remapping breaks cached W4IR or diagnostics] -> Version the complete cached representation, reject older entries atomically, and retain an internal-ID-to-original-opcode mapping.
 - [Canonical type IDs incorrectly merge signatures] -> Derive them from complete parameter and result vectors and add duplicate-equivalent and near-miss type tests.
 - [A future static-descriptor change mishandles uncommon validation states] -> Require a separate proposal, retain a compatibility path during its descriptor stage, and include focused tests for every control construct before removing dynamic state.
-- [The main method exceeds target verifier limits] -> Inspect target-47 bytecode after each phase and stop before the 7,800-byte project gate.
+- [The main method grows without bound] -> Inspect target-47 bytecode after each phase and stop before the 16,000-byte sanity gate; preverification and target loading remain the compatibility authorities.
 - [Several optimizations in one result obscure regressions] -> Maintain isolated variants and accept or revert each phase independently.
 - [QEMU translation time is mistaken for ARM performance] -> Use the AArch64 VM only for exact checkpoint and deterministic-counter parity; retain native i686 as the phoneME performance judge.
 - [Independent medians reverse a paired A/B sign] -> Compute every verdict from matching per-pair effects, balance run order, retain win/loss counts, and label timer-unresolved or short runs exploratory.

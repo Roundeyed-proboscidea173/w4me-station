@@ -70,16 +70,12 @@ public final class WasmInterpreter {
     private long[] compactProfileAcceptedInstructionLengths;
     private long compactProfileCandidates;
     private long compactProfileAcceptedCandidates;
-    private boolean fastPathsEnabled = true;
     private boolean compactExecutorEnabled = true;
     private boolean traceExecutorEnabled = true;
     private boolean directNumericIntrinsicsEnabled = true;
     private boolean integerCompactOpcodesEnabled = true;
     private boolean numericHostImportDispatchEnabled = true;
     private final int[][] compactBlockEnds;
-    private boolean plasmaTriDifferentialEnabled;
-    private int plasmaTriDifferentialCalls;
-    private int fastPathCalls;
     private int compactBlockCalls;
     private int compactInstructionsExecuted;
     private int traceLoopCalls;
@@ -110,7 +106,7 @@ public final class WasmInterpreter {
     }
 
     public int fastPathCalls() {
-        return fastPathCalls;
+        return 0;
     }
 
     public int compactBlockCalls() {
@@ -159,7 +155,8 @@ public final class WasmInterpreter {
     }
 
     public void setFastPathsEnabled(boolean enabled) {
-        fastPathsEnabled = enabled;
+        // Retained for diagnostic probe compatibility. The universal
+        // interpreter has no cartridge-specific execution paths.
     }
 
     public void setCompactExecutorEnabled(boolean enabled) {
@@ -179,7 +176,7 @@ public final class WasmInterpreter {
         for (index = 0; index < compactBlockEnds.length; index++) {
             compactBlockEnds[index] = null;
         }
-        if (profilingEnabled) {
+        if (InterpreterBuildConfig.PROFILING_SUPPORT && profilingEnabled) {
             prepareCompactProfileMetadata();
         }
     }
@@ -193,7 +190,7 @@ public final class WasmInterpreter {
         for (index = 0; index < compactBlockEnds.length; index++) {
             compactBlockEnds[index] = null;
         }
-        if (profilingEnabled) {
+        if (InterpreterBuildConfig.PROFILING_SUPPORT && profilingEnabled) {
             prepareCompactProfileMetadata();
         }
     }
@@ -203,6 +200,12 @@ public final class WasmInterpreter {
     }
 
     public void setProfilingEnabled(boolean enabled) {
+        if (!InterpreterBuildConfig.PROFILING_SUPPORT) {
+            if (enabled) {
+                throw new IllegalStateException("profiling is disabled in this build");
+            }
+            return;
+        }
         profilingEnabled = enabled;
         if (enabled && opcodeCounts == null) {
             opcodeCounts = new long[PROFILE_OPCODE_LIMIT];
@@ -368,15 +371,6 @@ public final class WasmInterpreter {
         return profileArrayValue(compactProfileAcceptedInstructionLengths, length);
     }
 
-    void setPlasmaTriDifferentialEnabled(boolean enabled) {
-        plasmaTriDifferentialEnabled = enabled;
-        plasmaTriDifferentialCalls = 0;
-    }
-
-    int plasmaTriDifferentialCalls() {
-        return plasmaTriDifferentialCalls;
-    }
-
     public void invoke(String exportName) throws WasmException {
         int functionIndex = module.exportedFunction(exportName);
         resetInvocation();
@@ -414,14 +408,13 @@ public final class WasmInterpreter {
         if (InterpreterBuildConfig.DIAGNOSTIC_COUNTERS) {
             dispatchesExecuted = 0;
         }
-        fastPathCalls = 0;
         if (InterpreterBuildConfig.DIAGNOSTIC_COUNTERS) {
             compactBlockCalls = 0;
             compactInstructionsExecuted = 0;
         }
         traceLoopCalls = 0;
         traceLoopIterations = 0;
-        if (profilingEnabled) {
+        if (InterpreterBuildConfig.PROFILING_SUPPORT && profilingEnabled) {
             int index;
             for (index = 0; index < opcodeCounts.length; index++) {
                 opcodeCounts[index] = 0;
@@ -448,7 +441,7 @@ public final class WasmInterpreter {
         if (functionIndex < 0 || functionIndex >= module.functions.length) {
             throw new WasmTrap("function index is out of range: " + functionIndex);
         }
-        if (profilingEnabled) {
+        if (InterpreterBuildConfig.PROFILING_SUPPORT && profilingEnabled) {
             functionCallCounts[functionIndex]++;
         }
         WasmModule.FunctionBody body = module.functions[functionIndex];
@@ -478,47 +471,6 @@ public final class WasmInterpreter {
         int argumentBase = valueTop - argumentCount;
         if (argumentBase < 0) {
             throw new WasmTrap("not enough function arguments");
-        }
-
-        byte[] differentialMemory = null;
-        long[] differentialGlobals = null;
-        if (plasmaTriDifferentialEnabled
-                && body != null
-                && PlasmaTriFast.matches(module, body)) {
-            if (argumentCount != 2 || type.results.length != 0) {
-                throw new WasmTrap("invalid Plasma fast-path signature");
-            }
-            byte[] originalMemory = (byte[]) module.memory.clone();
-            long[] originalGlobals = (long[]) module.globals.clone();
-            try {
-                PlasmaTriFast.run(
-                        module,
-                        (int) values[argumentBase],
-                        (int) values[argumentBase + 1]);
-                differentialMemory = (byte[]) module.memory.clone();
-                differentialGlobals = (long[]) module.globals.clone();
-            } finally {
-                System.arraycopy(originalMemory, 0, module.memory, 0, originalMemory.length);
-                System.arraycopy(originalGlobals, 0, module.globals, 0, originalGlobals.length);
-            }
-        }
-
-        if (differentialMemory == null
-                && fastPathsEnabled
-                && body != null
-                && PlasmaTriFast.matches(module, body)
-                && instructionLimit - instructionsExecuted >= 10000000) {
-            if (argumentCount != 2 || type.results.length != 0) {
-                throw new WasmTrap("invalid Plasma fast-path signature");
-            }
-            PlasmaTriFast.run(
-                    module,
-                    (int) values[argumentBase],
-                    (int) values[argumentBase + 1]);
-            valueTop = argumentBase;
-            instructionsExecuted++;
-            fastPathCalls++;
-            return;
         }
 
         if (body == null) {
@@ -575,36 +527,6 @@ public final class WasmInterpreter {
             callDepth--;
             controlTop = functionControlBase;
         }
-        if (differentialMemory != null) {
-            plasmaTriDifferentialCalls++;
-            assertPlasmaTriState(differentialMemory, differentialGlobals);
-        }
-    }
-
-    private void assertPlasmaTriState(byte[] expectedMemory, long[] expectedGlobals) {
-        int index;
-        for (index = 0; index < expectedMemory.length; index++) {
-            if (module.memory[index] != expectedMemory[index]) {
-                throw new WasmTrap(
-                        "Plasma fast-path memory mismatch at call "
-                                + plasmaTriDifferentialCalls
-                                + ", address "
-                                + index
-                                + ": expected "
-                                + (expectedMemory[index] & 0xff)
-                                + ", got "
-                                + (module.memory[index] & 0xff));
-            }
-        }
-        for (index = 0; index < expectedGlobals.length; index++) {
-            if (module.globals[index] != expectedGlobals[index]) {
-                throw new WasmTrap(
-                        "Plasma fast-path global mismatch at call "
-                                + plasmaTriDifferentialCalls
-                                + ", index "
-                                + index);
-            }
-        }
     }
 
     private void execute(
@@ -622,7 +544,9 @@ public final class WasmInterpreter {
         int previousPreviousOpcode = -1;
         boolean residentCode = body.code != null;
         boolean compactEligible =
-                compactExecutorEnabled && !profilingEnabled && residentCode;
+                compactExecutorEnabled
+                        && (!InterpreterBuildConfig.PROFILING_SUPPORT || !profilingEnabled)
+                        && residentCode;
         int[] compactEnds = null;
         int[] branchSiteByPc = null;
         int[] branchTargetBySite = null;
@@ -670,7 +594,7 @@ public final class WasmInterpreter {
             if (InterpreterBuildConfig.DIAGNOSTIC_COUNTERS) {
                 dispatchesExecuted++;
             }
-            if (profilingEnabled) {
+            if (InterpreterBuildConfig.PROFILING_SUPPORT && profilingEnabled) {
                 profileInstruction(
                         functionIndex,
                         pc,
@@ -691,34 +615,81 @@ public final class WasmInterpreter {
                     pc++;
                     break;
                 case WasmModule.BLOCK:
-                case WasmModule.LOOP:
-                    enterControl(instruction, pc, operand);
+                case WasmModule.LOOP: {
+                    if (controlTop >= CONTROL_STACK_LIMIT) {
+                        throw new WasmTrap("control stack exhausted");
+                    }
+                    int controlParameterCount = (instruction >>> 16) & 0xff;
+                    int controlBaseIndex = valueTop - controlParameterCount;
+                    if (controlBaseIndex < 0) {
+                        throw new WasmTrap("not enough block parameters");
+                    }
+                    controlKind[controlTop] = instruction & 0xffff;
+                    controlStart[controlTop] = pc;
+                    controlEnd[controlTop] = operand;
+                    controlBase[controlTop] = controlBaseIndex;
+                    controlParameters[controlTop] = controlParameterCount;
+                    controlResults[controlTop] = instruction >>> 24;
+                    controlTop++;
                     pc++;
                     break;
-                case WasmModule.IF:
+                }
+                case WasmModule.IF: {
                     int condition = popI32();
-                    enterControl(instruction, pc, operand);
+                    if (controlTop >= CONTROL_STACK_LIMIT) {
+                        throw new WasmTrap("control stack exhausted");
+                    }
+                    int ifParameterCount = (instruction >>> 16) & 0xff;
+                    int ifControlBase = valueTop - ifParameterCount;
+                    if (ifControlBase < 0) {
+                        throw new WasmTrap("not enough block parameters");
+                    }
+                    controlKind[controlTop] = instruction & 0xffff;
+                    controlStart[controlTop] = pc;
+                    controlEnd[controlTop] = operand;
+                    controlBase[controlTop] = ifControlBase;
+                    controlParameters[controlTop] = ifParameterCount;
+                    controlResults[controlTop] = instruction >>> 24;
+                    controlTop++;
                     if (condition != 0) {
                         pc++;
                     } else if (auxiliary >= 0) {
                         pc = auxiliary + 1;
                     } else {
-                        leaveControl(instruction >>> 24);
+                        if (controlTop <= 0) {
+                            throw new WasmTrap("control stack underflow");
+                        }
+                        int ifExitFrame = controlTop - 1;
+                        transfer(instruction >>> 24, controlBase[ifExitFrame]);
+                        controlTop = ifExitFrame;
                         pc = operand + 1;
                     }
                     break;
-                case 0x05:
-                    leaveControl(controlResults[controlTop - 1]);
+                }
+                case 0x05: {
+                    if (controlTop <= 0) {
+                        throw new WasmTrap("control stack underflow");
+                    }
+                    int elseExitFrame = controlTop - 1;
+                    transfer(controlResults[elseExitFrame], controlBase[elseExitFrame]);
+                    controlTop = elseExitFrame;
                     pc = operand + 1;
                     break;
-                case 0x0b:
+                }
+                case 0x0b: {
                     if (pc == instructionCount - 1) {
                         finishFunction(functionStackBase, functionType.results.length);
                         return;
                     }
-                    leaveControl(controlResults[controlTop - 1]);
+                    if (controlTop <= 0) {
+                        throw new WasmTrap("control stack underflow");
+                    }
+                    int endExitFrame = controlTop - 1;
+                    transfer(controlResults[endExitFrame], controlBase[endExitFrame]);
+                    controlTop = endExitFrame;
                     pc++;
                     break;
+                }
                 case 0x0c:
                     if (InterpreterBuildConfig.DIRECT_BRANCH_FAST_PATH) {
                         int directBranchSite = branchSiteByPc[pc];
@@ -1121,47 +1092,87 @@ public final class WasmInterpreter {
                     pc++;
                     break;
                 case 0x45:
-                    pushI32(popI32() == 0 ? 1 : 0);
+                    if (valueTop <= 0) {
+                        throw new WasmTrap("value stack underflow");
+                    }
+                    values[valueTop - 1] =
+                            (int) values[valueTop - 1] == 0 ? 1 : 0;
                     pc++;
                     break;
                 case 0x46:
-                    compareI32(0);
-                    pc++;
-                    break;
                 case 0x47:
-                    compareI32(1);
-                    pc++;
-                    break;
                 case 0x48:
-                    compareI32(2);
-                    pc++;
-                    break;
                 case 0x49:
-                    compareI32(3);
-                    pc++;
-                    break;
                 case 0x4a:
-                    compareI32(4);
-                    pc++;
-                    break;
                 case 0x4b:
-                    compareI32(5);
-                    pc++;
-                    break;
                 case 0x4c:
-                    compareI32(6);
-                    pc++;
-                    break;
                 case 0x4d:
-                    compareI32(7);
-                    pc++;
-                    break;
                 case 0x4e:
-                    compareI32(8);
-                    pc++;
-                    break;
                 case 0x4f:
-                    compareI32(9);
+                    if (valueTop < 2) {
+                        throw new WasmTrap("value stack underflow");
+                    }
+                    int genericI32CompareRight = (int) values[--valueTop];
+                    int genericI32CompareLeft = (int) values[valueTop - 1];
+                    boolean genericI32Comparison;
+                    switch (opcode) {
+                        case 0x46:
+                            genericI32Comparison =
+                                    genericI32CompareLeft
+                                            == genericI32CompareRight;
+                            break;
+                        case 0x47:
+                            genericI32Comparison =
+                                    genericI32CompareLeft
+                                            != genericI32CompareRight;
+                            break;
+                        case 0x48:
+                            genericI32Comparison =
+                                    genericI32CompareLeft
+                                            < genericI32CompareRight;
+                            break;
+                        case 0x49:
+                            genericI32Comparison =
+                                    (genericI32CompareLeft & 0xffffffffL)
+                                            < (genericI32CompareRight
+                                                    & 0xffffffffL);
+                            break;
+                        case 0x4a:
+                            genericI32Comparison =
+                                    genericI32CompareLeft
+                                            > genericI32CompareRight;
+                            break;
+                        case 0x4b:
+                            genericI32Comparison =
+                                    (genericI32CompareLeft & 0xffffffffL)
+                                            > (genericI32CompareRight
+                                                    & 0xffffffffL);
+                            break;
+                        case 0x4c:
+                            genericI32Comparison =
+                                    genericI32CompareLeft
+                                            <= genericI32CompareRight;
+                            break;
+                        case 0x4d:
+                            genericI32Comparison =
+                                    (genericI32CompareLeft & 0xffffffffL)
+                                            <= (genericI32CompareRight
+                                                    & 0xffffffffL);
+                            break;
+                        case 0x4e:
+                            genericI32Comparison =
+                                    genericI32CompareLeft
+                                            >= genericI32CompareRight;
+                            break;
+                        default:
+                            genericI32Comparison =
+                                    (genericI32CompareLeft & 0xffffffffL)
+                                            >= (genericI32CompareRight
+                                                    & 0xffffffffL);
+                            break;
+                    }
+                    values[valueTop - 1] =
+                            genericI32Comparison ? 1 : 0;
                     pc++;
                     break;
                 case 0x50:
@@ -3020,7 +3031,7 @@ public final class WasmInterpreter {
     }
 
     private void executeDirectNumericIntrinsic(int functionIndex, boolean sine) {
-        if (profilingEnabled) {
+        if (InterpreterBuildConfig.PROFILING_SUPPORT && profilingEnabled) {
             functionCallCounts[functionIndex]++;
         }
         int argument = popI32();
@@ -3518,35 +3529,6 @@ public final class WasmInterpreter {
         return pc + 3;
     }
 
-    private void enterControl(int instruction, int pc, int endPc) {
-        if (controlTop >= CONTROL_STACK_LIMIT) {
-            throw new WasmTrap("control stack exhausted");
-        }
-        int opcode = instruction & 0xffff;
-        int parameterCount = (instruction >>> 16) & 0xff;
-        int resultCount = instruction >>> 24;
-        int base = valueTop - parameterCount;
-        if (base < 0) {
-            throw new WasmTrap("not enough block parameters");
-        }
-        controlKind[controlTop] = opcode;
-        controlStart[controlTop] = pc;
-        controlEnd[controlTop] = endPc;
-        controlBase[controlTop] = base;
-        controlParameters[controlTop] = parameterCount;
-        controlResults[controlTop] = resultCount;
-        controlTop++;
-    }
-
-    private void leaveControl(int resultCount) {
-        if (controlTop <= 0) {
-            throw new WasmTrap("control stack underflow");
-        }
-        int frame = controlTop - 1;
-        transfer(resultCount, controlBase[frame]);
-        controlTop = frame;
-    }
-
     private int branchWithDescriptorShadow(
             WasmModule.FunctionBody body,
             int descriptorIndex,
@@ -3712,6 +3694,16 @@ public final class WasmInterpreter {
     private void transfer(int count, int destinationBase) {
         if (count < 0 || count > transferValues.length || valueTop - count < destinationBase) {
             throw new WasmTrap("invalid stack transfer");
+        }
+        if (count == 0) {
+            valueTop = destinationBase;
+            return;
+        }
+        if (count == 1) {
+            long value = values[valueTop - 1];
+            valueTop = destinationBase;
+            push(value);
+            return;
         }
         int index;
         for (index = 0; index < count; index++) {

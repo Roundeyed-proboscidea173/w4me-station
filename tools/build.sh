@@ -14,7 +14,16 @@ DIST_DIR="${ROOT_DIR}/dist"
 rm -rf -- "${BUILD_DIR}" "${DIST_DIR}"
 mkdir -p -- "${CLASSES_DIR}" "${DIST_DIR}"
 
-find "${ROOT_DIR}/src/main/java" -name '*.java' -print | sort >"${BUILD_DIR}/sources.list"
+# The distributable MIDlets use the accepted counterless production config.
+# Host tests keep compiling the regular diagnostic config so profiling and
+# deterministic counter assertions remain available outside release artifacts.
+find "${ROOT_DIR}/src/main/java" \
+    -name '*.java' \
+    ! -path "${ROOT_DIR}/src/main/java/w4me/wasm/InterpreterBuildConfig.java" \
+    -print | sort >"${BUILD_DIR}/sources.list"
+printf '%s\n' \
+    "${ROOT_DIR}/bench/configs/timed/java/w4me/wasm/InterpreterBuildConfig.java" \
+    >>"${BUILD_DIR}/sources.list"
 javac \
     -source "${J2ME_SOURCE}" \
     -target "${J2ME_TARGET}" \
@@ -107,7 +116,7 @@ package_variant() {
     jar_size="$(stat -c '%s' -- "${jar_path}")"
     {
         printf '%s\n' 'MIDlet-Name: W4ME Station'
-        printf '%s\n' 'MIDlet-Version: 1.0.0'
+        printf '%s\n' 'MIDlet-Version: 1.0.1'
         printf '%s\n' 'MIDlet-Vendor: W4ME'
         # Keep these in step with src/main/manifest/MANIFEST.MF. The icon path is
         # what a handset shows in its application menu and install dialog; an empty

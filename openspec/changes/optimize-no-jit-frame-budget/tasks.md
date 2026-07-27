@@ -345,3 +345,430 @@
   stops the experiment; do not infer performance from bytecode
 - [x] 27.5 Record the candidate as inconclusive, remove all implementation and
   test changes, and restore the stable source tree
+
+## 28. NJIT-027 generic local.set and local.tee direct stack path
+
+- [x] 28.1 Record exact corpus coverage, the isolated helper-call mechanism,
+  retained NJIT-025 baseline hashes, semantic boundary, and acceptance gates
+- [x] 28.2 Implement only the outer generic `local.set` and `local.tee`
+  stack-height guards and `values[]` access, leaving `local.get` unchanged
+- [x] 28.3 Pass focused underflow, full-state, Java 1.3, CLDC, target-47,
+  preverification, release, bytecode, and heap gates
+- [x] 28.4 Produce a hash-bound counterless artifact and run at least twelve
+  balanced native i686 phoneME pairs on Rubido and Game of Life; run Waternet
+  and Untangle controls only when both primary gates pass
+- [x] 28.5 Record raw pairs and the verdict, then remove a rejected candidate
+  or retain a fully verified accepted candidate
+
+## 29. NJIT-028 generic local.get exact direct push
+
+- [x] 29.1 Record exact corpus coverage, the isolated helper-frame mechanism,
+  exception and rollback semantics, retained baseline hashes, and gates
+- [x] 29.2 Implement only `local.get` with the exact existing `push()`
+  `try/catch`, capacity trap, and `valueTop` rollback
+- [x] 29.3 Pass focused stack overflow, full-state, Java 1.3, CLDC, target-47,
+  preverification, release, bytecode, and heap gates
+- [x] 29.4 Produce a hash-bound counterless artifact and run twelve balanced
+  native i686 phoneME pairs on Rubido and Game of Life; run controls only if
+  both primary gates pass
+- [x] 29.5 Record raw pairs and verdict, then remove a rejected candidate or
+  retain a fully verified accepted candidate
+
+## 30. NJIT-029 packed horizontal framebuffer spans
+
+- [x] 30.1 Build phoneME's statistical method profiler out of tree, record
+  method samples for Waternet, Rubido, Untangle, and Game of Life, and bind
+  the selection evidence to VM and report hashes
+- [x] 30.2 Record the scalar per-pixel mechanism, packed-span replacement,
+  retained NJIT-025 baseline identities, exact boundary semantics, and native
+  acceptance gates before implementation
+- [x] 30.3 Implement only `drawHorizontal` as leading partial, complete packed
+  bytes, and trailing partial writes, with no allocation or caller changes
+- [x] 30.4 Add exhaustive color/alignment differential coverage and pass the
+  full-state, Java 1.3, CLDC, target-47, preverification, release, bytecode,
+  and heap gates
+- [x] 30.5 Produce a hash-bound counterless artifact and run at least twelve
+  balanced native i686 phoneME pairs on Waternet and Untangle, with Rubido and
+  Game of Life controls
+- [x] 30.6 Record raw pairs and the verdict, then remove a rejected candidate
+  or retain a fully verified accepted candidate
+
+## 31. NJIT-030 inline generic control-frame entry
+
+- [x] 31.1 Bind the candidate to the post-NJIT-029 native method-profile
+  hashes and retained exact `block`/`loop`/`if` execution counts
+- [x] 31.2 Record the exact two-site inlining boundary, control-stack
+  semantics, excluded changes, and native acceptance gates before editing
+- [x] 31.3 Inline only `enterControl` into the shared block/loop and if cases,
+  remove the dead helper, and prove both invokes are absent
+- [x] 31.4 Pass static-control, seven-workload full-state, Java 1.3, CLDC,
+  target-47, preverification, trap, budget, cache, release, and size gates
+- [x] 31.5 Produce hash-bound counterless artifacts and run twelve balanced
+  native i686 Rubido pairs plus the required no-regression controls
+- [x] 31.6 Record raw pairs and the verdict, then remove a rejected candidate
+  or retain a fully verified accepted candidate
+
+## 32. NJIT-031 zero- and one-value control-transfer fast paths
+
+- [x] 32.1 Bind the candidate to the post-NJIT-030 method-profile hashes,
+  retained control-flow counts, stable source, and exact phoneME toolchain
+- [x] 32.2 Record the validation order, zero/scalar paths, unchanged generic
+  fallback, excluded changes, and native acceptance gates before editing
+- [x] 32.3 Implement only the zero- and one-value returns in `transfer`, with
+  the original validation and generic multi-value loops retained
+- [x] 32.4 Pass focused control-transfer, seven-workload full-state, Java 1.3,
+  CLDC, target-47, preverification, trap, budget, cache, release, and size
+  gates
+- [x] 32.5 Produce hash-bound counterless artifacts and run twelve balanced
+  native i686 Rubido and Game of Life pairs plus the required Waternet control
+- [x] 32.6 Record raw pairs and the verdict, then remove a rejected candidate
+  or retain a fully verified accepted candidate
+
+## 33. NJIT-032 compact i32.load8_u direct stack/address path
+
+- [x] 33.1 Record why the corrected NJIT-024 fixture and post-NJIT-031
+  profiler evidence make this a materially new experiment rather than an
+  untracked rerun
+- [x] 33.2 Bind the candidate to retained source/classes, exact focused
+  fixtures, isolated compact-only semantics, excluded changes, and native
+  acceptance gates before editing
+- [x] 33.3 Implement only the compact `i32.load8_u` direct stack and
+  width-one address path, leaving generic execution and W4IR unchanged
+- [x] 33.4 Pass focused success/budget/trap snapshots, seven-workload
+  full-state, Java 1.3, CLDC, target-47, preverification, release, cache,
+  bytecode, and heap gates
+- [x] 33.5 Produce a hash-bound counterless artifact and run at least twelve
+  balanced native i686 phoneME Game of Life pairs plus the required controls
+  if the primary gate passes
+- [x] 33.6 Record raw pairs and verdict, then remove a rejected candidate or
+  retain a fully verified accepted candidate
+
+## 34. NJIT-033 compact i32.eqz top-of-stack overwrite
+
+- [x] 34.1 Bind E15 to exact `i32.eqz` route counts, compact-tier activity,
+  retained source/classes, isolated semantics, excluded changes, and native
+  acceptance gates
+- [x] 34.2 Implement only compact opcode `0x45` as an underflow-checked
+  overwrite of `values[valueTop - 1]`, leaving generic execution unchanged
+- [x] 34.3 Pass focused value/budget snapshots, seven-workload full-state,
+  Java 1.3, CLDC, target-47, preverification, release, cache, bytecode, and
+  heap gates
+- [x] 34.4 Produce a hash-bound counterless artifact and run at least twelve
+  balanced native i686 phoneME Rubido pairs plus required controls if the
+  primary gate passes
+- [x] 34.5 Record raw pairs and verdict, then remove a rejected candidate or
+  retain a fully verified accepted candidate
+
+## 35. NJIT-034 compact i32.load caller-inline address guard
+
+- [x] 35.1 Bind the NJIT-005 caller-inline reconsideration to exact current
+  Rubido opcode/tier counts, post-NJIT-031 phoneME method samples, retained
+  hashes, isolated semantics, exclusions, and native acceptance gates
+- [x] 35.2 Inline only the folded effective-address guard in compact opcode
+  `0x28`, retaining `loadI32` and every generic/fused/helper path
+- [x] 35.3 Pass focused memory/budget differentials, seven-workload full-state,
+  Java 1.3, CLDC, target-47, preverification, release, cache, bytecode, and
+  heap gates
+- [x] 35.4 Produce a hash-bound counterless artifact and run at least twelve
+  balanced native i686 phoneME Rubido pairs plus required controls if the
+  primary gate passes
+- [x] 35.5 Record raw pairs and verdict, then remove a rejected candidate or
+  retain a fully verified accepted candidate
+
+## 36. NJIT-035 inline generic control-frame exit
+
+- [x] 36.1 Bind the three `leaveControl` callers to current exact control-opcode
+  counts, post-NJIT-031 phoneME method samples, retained hashes, exclusions,
+  and native acceptance gates
+- [x] 36.2 Inline the helper body at false-if, else, and non-terminal-end
+  dispatch sites without changing `transfer` or terminal function return
+- [x] 36.3 Pass focused control/budget differentials, seven-workload
+  full-state, Java 1.3, CLDC, target-47, preverification, release, cache,
+  bytecode, and counterless gates
+- [x] 36.4 Produce a hash-bound counterless artifact and run at least twelve
+  balanced native i686 phoneME Rubido and Game of Life pairs plus required
+  controls if the primary gates pass
+- [x] 36.5 Record raw pairs and verdict, then remove a rejected candidate or
+  retain a fully verified accepted candidate
+
+## 37. NJIT-036 direct generic branch-condition pop
+
+- [x] 37.1 Bind `if` and `br_if` to the post-NJIT-035 phoneME `pop()` sample,
+  exact current route counts, retained hashes, semantic ordering, exclusions,
+  and native acceptance gates
+- [x] 37.2 Inline only the `popI32()` condition reads in generic `if` and
+  `br_if`, preserving every branch and descriptor path
+- [x] 37.3 Pass focused branch/budget differentials, seven-workload
+  full-state, Java 1.3, CLDC, target-47, preverification, release, cache,
+  bytecode, and counterless gates
+- [x] 37.4 Produce a hash-bound counterless artifact and run at least twelve
+  balanced native i686 phoneME Rubido and Game of Life pairs plus required
+  controls if the primary gates pass
+- [x] 37.5 Record raw pairs and verdict, then remove a rejected candidate or
+  retain a fully verified accepted candidate
+
+## 38. NJIT-037 direct compact `w4ir.local_local`
+
+- [x] 38.1 Bind the candidate to post-NJIT-035 phoneME samples, exact current
+  fused-opcode counts, retained hashes, partial-stack trap semantics,
+  exclusions, and native acceptance gates
+- [x] 38.2 Move only compact `w4ir.local_local` into the main compact switch
+  with two sequential checked writes and remove its duplicate helper case
+- [x] 38.3 Pass focused stack-capacity differentials, seven-workload
+  full-state, Java 1.3, CLDC, target-47, preverification, release, cache,
+  bytecode, and counterless gates
+- [x] 38.4 Produce a hash-bound counterless artifact and run at least twelve
+  balanced native i686 phoneME Rubido and Game of Life pairs plus required
+  controls if the primary gates pass
+- [x] 38.5 Record raw pairs and verdict, then remove a rejected candidate or
+  retain a fully verified accepted candidate
+
+## 39. NJIT-038 compact `w4ir.local_set_get` top replacement
+
+- [x] 39.1 Bind the candidate to post-NJIT-035 phoneME samples, exact current
+  fused-opcode counts, retained hashes, alias and underflow semantics,
+  exclusions, and native acceptance gates
+- [x] 39.2 Move only compact `w4ir.local_set_get` into the main compact switch
+  as an ordered top-slot replacement and remove its duplicate helper case
+- [x] 39.3 Pass focused distinct-local/alias/underflow differentials,
+  seven-workload full-state, Java 1.3, CLDC, target-47, preverification,
+  release, cache, bytecode, and counterless gates
+- [x] 39.4 Produce a hash-bound counterless artifact and run at least twelve
+  balanced native i686 phoneME Rubido pairs plus required controls if the
+  primary gate passes
+- [x] 39.5 Record raw pairs and verdict, then remove a rejected candidate or
+  retain a fully verified accepted candidate
+
+## 40. NJIT-039 direct compact `w4ir.local_i32_const_add`
+
+- [x] 40.1 Bind the candidate to post-NJIT-035 phoneME samples, exact current
+  fused-opcode counts, retained hashes, exclusions, and native acceptance gates
+- [x] 40.2 Move only compact `w4ir.local_i32_const_add` into the main compact
+  switch as one guarded stack write and remove its duplicate helper case
+- [x] 40.3 Pass focused capacity/signed/wraparound differentials,
+  seven-workload full-state, Java 1.3, CLDC, target-47, preverification,
+  release, cache, bytecode, and counterless gates
+- [x] 40.4 Produce a hash-bound counterless artifact and run at least twelve
+  balanced native i686 phoneME Rubido pairs plus required controls if the
+  primary gate passes
+- [x] 40.5 Record raw pairs and verdict, then remove a rejected candidate or
+  retain a fully verified accepted candidate
+
+## 41. NJIT-040 direct generic `i32.add`
+
+- [x] 41.1 Bind the candidate to the accepted generic direct-stack precedent,
+  exact current opcode counts, retained hashes, exclusions, and native
+  acceptance gates
+- [x] 41.2 Replace only generic opcode `0x6a` with an underflow-checked
+  in-place `values[]` addition, leaving compact and fused execution unchanged
+- [x] 41.3 Pass focused underflow/signed/wraparound differentials,
+  seven-workload full-state, Java 1.3, CLDC, target-47, preverification,
+  release, cache, bytecode, heap, and counterless gates
+- [x] 41.4 Produce a hash-bound counterless artifact and run at least twelve
+  balanced native i686 phoneME Game of Life pairs plus required controls if
+  the primary gate passes
+- [x] 41.5 Record raw pairs and verdict, then remove a rejected candidate or
+  retain a fully verified accepted candidate
+
+## 42. NJIT-041 frame-neutral terminal `br_if` compact regions
+
+- [x] 42.1 Bind the candidate to the earlier exact branch-region prototype,
+  accepted pc-indexed direct metadata, current stable hashes, frame-growth
+  risk, exclusions, and native acceptance gates
+- [x] 42.2 Encode eligible terminal `br_if` regions in the existing compact-end
+  table and execute the branch in the outer frame while leaving ordinary
+  compact regions and `executeCompactBlock` unchanged
+- [x] 42.3 Pass focused branch/budget differentials, seven-workload full-state,
+  Java 1.3, CLDC, target-47, preverification, release, cache, bytecode, heap,
+  and counterless gates
+- [x] 42.4 Produce a hash-bound counterless artifact and run at least twelve
+  balanced native i686 phoneME Rubido pairs plus required controls if the
+  primary gate passes
+- [x] 42.5 Record raw pairs and verdict, then remove a rejected candidate or
+  retain a fully verified accepted candidate
+
+## 43. NJIT-042 direct generic i32 ALU batch
+
+- [x] 43.1 Bind the NJIT-040 reconsideration to exact current ALU coverage,
+  retained hashes, exclusions, and native acceptance gates
+- [x] 43.2 Replace only generic `i32.add`, `i32.mul`, `i32.and`, `i32.xor`,
+  `i32.shr_s`, and `i32.shr_u` with underflow-checked in-place `values[]`
+  operations
+- [x] 43.3 Pass focused operation/boundary/underflow differentials,
+  seven-workload full-state, Java 1.3, CLDC, target-47, preverification,
+  release, cache, bytecode, heap, and counterless gates
+- [x] 43.4 Produce a hash-bound counterless artifact and run at least twelve
+  balanced native i686 phoneME Game of Life pairs plus required controls if
+  the primary gate passes
+- [x] 43.5 Record raw pairs and verdict, then remove a rejected candidate or
+  retain a fully verified accepted candidate
+
+## 44. NJIT-043 ship the accepted counterless production configuration
+
+- [x] 44.1 Confirm the current release build still selects the diagnostic
+  interpreter config and bind revalidation to retained NJIT-035, historical
+  clean phoneME evidence, exact exclusions, and current acceptance gates
+- [x] 44.2 Build same-source diagnostic and counterless artifacts and run at
+  least twelve balanced native i686 phoneME Rubido pairs plus Waternet and
+  Untangle controls
+- [x] 44.3 If the timing gate passes, select the existing counterless config
+  only for distributable JAR compilation and reject diagnostic counter writes
+  in release-JAR verification
+- [x] 44.4 Pass the complete Java 1.3, CLDC, target-47, preverification,
+  full-state, release, deterministic-build, JAR-content, bytecode, and
+  counterless gates
+- [x] 44.5 Record raw pairs, release hashes and verdict, then retain the
+  production mapping only if every gate passes
+
+## 45. NJIT-044 remove the cartridge-specific Plasma replacement
+
+- [x] 45.1 Bind the exact fingerprinted selection path, universal product
+  contract, retained hashes, exclusions, and no-regression gate
+- [x] 45.2 Remove `PlasmaTriFast`, its production and differential call paths,
+  and the shortcut-specific smoke while keeping generic probe APIs inert
+- [x] 45.3 Reject the shortcut class in distributable JAR verification and
+  pass seven-workload full-state, Java 1.3, CLDC, target-47, preverification,
+  release, cache, bytecode, and counterless gates
+- [x] 45.4 Produce a hash-bound counterless candidate and run at least twelve
+  balanced native i686 phoneME Rubido no-regression pairs
+- [x] 45.5 Record raw pairs, artifact hashes and verdict, then retain the
+  contract-clean baseline only if every gate passes
+
+## 46. NJIT-045 sparse exact instruction-budget recovery
+
+- [x] 46.1 Bind the confirmed fused-budget defect, rejected full-copy
+  prototype, sparse recipe layout, format bump, exclusions, footprint metrics,
+  exactness matrix, and native no-regression gates
+- [x] 46.2 Preserve consumed original W4IR slots with a build-only bitmap and
+  emit sorted four-int recovery recipes for every rewritten fusion root
+- [x] 46.3 Persist and validate recovery recipes through W4IR function metadata
+  and RMS build/hit while atomically rebuilding older format records
+- [x] 46.4 Switch only the near-budget invocation tail to original logical
+  instructions and make batching loops and counted traces yield before the
+  exact window
+- [x] 46.5 Pass focused fusion-boundary, cache, call, control, batching, and
+  trace exactness coverage plus the complete Java 1.3, CLDC, target-47,
+  preverification, release, full-state, bytecode, and counterless gates; record
+  that the exhaustive generated matrix was not justified after primary rejection
+- [x] 46.6 Measure retained heap/RMS payload and run twelve balanced native
+  i686 phoneME Game of Life pairs; stop Rubido and Plasma controls after the
+  primary route fails the mandatory no-regression floor
+- [x] 46.7 Record raw receipts, hashes, footprint, verdict, and either retain
+  the exact sparse implementation or remove it completely
+
+## 47. NJIT-046 counterless build without opcode profiling support
+
+- [x] 47.1 Bind the candidate to instrumented phoneME bytecode-type and
+  method/BCI profiles, retained baseline hashes, exact exclusions, and native
+  acceptance gates
+- [x] 47.2 Add a compile-time profiling-support constant to every interpreter
+  config and remove profiler-dependent runtime branches only from the existing
+  timed/counterless production artifact
+- [x] 47.3 Prove with `javap` that counterless hot paths contain no profiling
+  field reads or calls while the diagnostic corpus profiler remains functional
+- [x] 47.4 Pass the complete Java 1.3, CLDC, target-47, preverification,
+  release, full-state, cache, bytecode, heap, and counterless gates
+- [x] 47.5 Produce hash-bound artifacts and run at least twelve balanced native
+  i686 phoneME Rubido pairs plus Waternet, Untangle, and Game of Life controls
+  when the primary gate passes
+- [x] 47.6 Record raw profiles, pairs, hashes, footprint, and verdict, then
+  remove a rejected candidate or retain a fully verified accepted candidate
+
+## 48. NJIT-047 compact executor value-array local
+
+- [x] 48.1 Bind the candidate to the accepted NJIT-046 artifact, method/BCI
+  profile, target-47 field-access shape, exact exclusions, and native gates
+- [x] 48.2 Cache only the immutable `values` array reference in
+  `executeCompactBlock` and leave `valueTop` plus helper-backed paths unchanged
+- [x] 48.3 Prove the compact executor replaces repeated `getfield values`
+  sites with one local alias without adding invokes or breaking bytecode gates
+- [x] 48.4 Pass the complete Java 1.3, CLDC, target-47, preverification,
+  release, full-state, cache, bytecode, heap, and counterless gates
+- [x] 48.5 Produce hash-bound artifacts and run at least twelve balanced native
+  i686 phoneME Game of Life pairs plus Rubido, Waternet, and Untangle controls
+  if the primary gate passes
+- [x] 48.6 Record raw pairs, hashes, footprint, and verdict, then remove a
+  rejected candidate or retain a fully verified accepted candidate
+
+## 49. NJIT-048 compact-block budget-check elision
+
+- [x] 49.1 Bind the candidate to the accepted NJIT-046 artifact, fresh
+  method/BCI profile, prior NJIT-001 rejection, exact mechanism, exclusions,
+  and native gates
+- [x] 49.2 Prove whole-block budget admission in the outer executor and pass
+  only that boolean into `executeCompactBlock`
+- [x] 49.3 Elide only compact per-instruction limit comparisons for an admitted
+  block while preserving every counter increment and trap-side-effect order
+- [x] 49.4 Pass focused outer/compact budget sweeps plus the complete Java 1.3,
+  CLDC, target-47, preverification, release, full-state, cache, bytecode,
+  heap, and counterless gates
+- [x] 49.5 Produce hash-bound artifacts and run at least twelve balanced native
+  i686 phoneME Game of Life pairs plus required controls if the primary gate
+  passes
+- [x] 49.6 Record raw pairs, hashes, footprint, and verdict, then remove a
+  rejected candidate or retain a fully verified accepted candidate
+
+## 50. NJIT-049 separate admitted compact executor
+
+- [x] 50.1 Bind the candidate to accepted NJIT-046, the NJIT-001 and NJIT-048
+  measurements, exact split-method mechanism, exclusions, and native gates
+- [x] 50.2 Route only fully admitted counterless compact blocks to a separate
+  unchecked executor while leaving the checked executor unchanged
+- [x] 50.3 Mirror compact handlers with a local logical counter and exact
+  normal/exceptional publication but no inner budget comparison or selection
+  branch
+- [x] 50.4 Pass focused budget/trap sweeps plus the complete Java 1.3, CLDC,
+  target-47, preverification, release, full-state, cache, bytecode, heap, and
+  counterless gates
+- [x] 50.5 Produce hash-bound artifacts and run at least twelve balanced native
+  i686 phoneME Game of Life pairs plus required controls if the primary passes
+- [x] 50.6 Record raw pairs, hashes, footprint, and verdict, then remove a
+  rejected candidate or retain a fully verified accepted candidate
+
+## 51. NJIT-050 scalar defined-function result arity
+
+- [x] 51.1 Bind the candidate to accepted NJIT-046, exact call density,
+  target-47 result-arity loads, prior NJIT-004/NJIT-020 distinctions,
+  exclusions, baseline hashes, and native gates
+- [x] 51.2 Replace only the private outer-executor `FuncType` parameter with
+  its scalar result count while preserving parameter slots and all semantics
+- [x] 51.3 Prove target-47 removes every `FuncType.results + arraylength` pair
+  from counterless `execute` without adding fields, arrays, formats, or heap
+- [x] 51.4 Pass the complete Java 1.3, CLDC, target-47, preverification,
+  release, full-state, cache, budget/trap, bytecode, and counterless gates
+- [x] 51.5 Produce hash-bound artifacts and run sixteen balanced native i686
+  phoneME Game of Life pairs plus required controls if the primary passes
+- [x] 51.6 Record raw pairs, hashes, footprint, and verdict, then remove a
+  rejected candidate or retain a fully verified accepted candidate
+
+## 52. NJIT-051 inline ordinary direct-defined-call frame setup
+
+- [x] 52.1 Bind the candidate to accepted NJIT-046, exact direct-call density,
+  target-47 frame shape, prior NJIT-006/020/050 distinctions, baseline hashes,
+  exclusions, and native gates
+- [x] 52.2 Inline only the ordinary direct-defined-call setup in a scoped
+  generic `call` case while retaining `callFunction` for every fallback path
+- [x] 52.3 Prove ordinary direct calls remove the middle Java frame without a
+  W4IR/RMS or heap change and record `execute` code and local-slot growth
+- [x] 52.4 Pass focused call/trap/budget tests plus the complete Java 1.3,
+  CLDC, target-47, preverification, release, cache, full-state, and
+  counterless gates
+- [x] 52.5 Produce hash-bound artifacts and start the predeclared sixteen-pair
+  native i686 phoneME Game of Life run; record the owner-requested interruption
+  during sample zero before a complete pair existed
+- [x] 52.6 Record the partial evidence, hashes, footprint, and inconclusive
+  verdict, then remove the candidate and restore accepted NJIT-046 exactly
+
+## 53. Final accepted-set A/B against main
+
+- [x] 53.1 Build a hash-bound regular-production baseline from
+  `main@8e850656` and bind the restored NJIT-046 production artifact
+- [x] 53.2 Prove the two route harness and framebuffer-oracle classes are
+  byte-identical and record VM, CLDC, source, and artifact hashes
+- [x] 53.3 Run sixteen balanced native i686 phoneME pairs on Waternet, Rubido,
+  Untangle, and Game of Life without competing benchmark processes
+- [x] 53.4 Require exact checkpoints, logical instructions, fast-path counts,
+  and direct-branch metadata while treating removed diagnostic telemetry as an
+  expected production difference
+- [x] 53.5 Record absolute medians, direct paired effects, throughput ratios,
+  raw receipt hashes, and the headless-runtime limitation for release notes

@@ -1,5 +1,38 @@
 # Changelog
 
+## 1.0.1 — 2026-07-27
+
+This release improves the universal Java ME runtime without changing the
+cartridge format, controls, storage, or installation requirements.
+
+### Performance
+
+- packed horizontal framebuffer spans replace per-pixel Java calls on common
+  WASM-4 drawing paths;
+- generic integer comparisons and common control-frame operations execute with
+  fewer Java helper calls;
+- distributable JARs compile diagnostic dispatch counters and opcode profiling
+  out of production bytecode;
+- sixteen balanced native i686 phoneME pairs per workload measured headless
+  frame-time reductions of 35.753% in Waternet, 17.057% in Rubido, 65.151% in
+  Untangle, and 10.826% in Game of Life compared with `main@8e85065`; all 64
+  pairs favored 1.0.1 and matched exact oracle checkpoints.
+
+These measurements use a CLDC 1.1 C interpreter without a JIT. They exclude
+MIDP presentation and audio latency and are not physical-device FPS figures.
+
+### Runtime integrity
+
+- removed the cartridge-fingerprinted Plasma Cube Java replacement so every
+  bundled and external cartridge now follows the universal interpreter path;
+- expanded exact framebuffer, interpreter, production-bytecode, and
+  counterless-build verification;
+- reduced the full release JAR from about 275 KB to 270 KB.
+
+Plasma Cube may run slower than in 1.0.0 because it now exercises the actual
+universal interpreter instead of a cartridge-specific replacement. It remains
+a technical stress workload rather than a representative game.
+
 ## 1.0.0 — 2026-07-26
 
 The first public W4ME Station release targets CLDC 1.1 / MIDP 2.0 phones with
