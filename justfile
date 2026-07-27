@@ -5,7 +5,7 @@ default:
 
 # Build the project toolchain image. Commands start disposable containers from it.
 setup:
-    docker build -t w4me-station -f tools/container/Containerfile .
+    ./tools/container/setup.sh
 
 # Print and validate every required development tool.
 doctor:

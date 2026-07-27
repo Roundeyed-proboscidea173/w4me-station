@@ -14,6 +14,12 @@ just setup
 just doctor
 ```
 
+`just setup` fingerprints the Containerfile and its local inputs. Repeating it
+without a toolchain change is a no-op. After a successful rebuild it removes
+only superseded and dangling W4ME Station images; unrelated images, active
+containers, and volumes are not pruned. Set `W4ME_TOOLCHAIN_FORCE_REBUILD=1`
+when the pinned Fedora base should be refreshed without a source change.
+
 Project scripts source `tools/container/env.sh`. When launched from the host,
 they automatically re-exec themselves in a disposable `docker run --rm`
 container with a sanitized `PATH`. The repository is bind-mounted at
