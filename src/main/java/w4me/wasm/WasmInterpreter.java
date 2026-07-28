@@ -597,8 +597,7 @@ public final class WasmInterpreter {
             int pageOffset = codeOffset - codePageBase;
             int instruction = code[pageOffset];
             int opcode = instruction & 0xffff;
-            int operand = code[pageOffset + 1];
-            int auxiliary = code[pageOffset + 2];
+            int auxiliary;
             if (executed >= budgetCheckLimit) {
                 if (executed >= instructionLimit) {
                     executed++;
@@ -609,6 +608,7 @@ public final class WasmInterpreter {
                 continue;
             }
             executed++;
+            int operand = code[pageOffset + 1];
             if (InterpreterBuildConfig.DIAGNOSTIC_COUNTERS) {
                 dispatchesExecuted++;
             }
@@ -648,6 +648,7 @@ public final class WasmInterpreter {
                     break;
                 }
                 case WasmModule.IF: {
+                    auxiliary = code[pageOffset + 2];
                     int condition = popI32();
                     if (controlTop >= CONTROL_STACK_LIMIT) {
                         throw new WasmTrap("control stack exhausted");
@@ -925,6 +926,7 @@ public final class WasmInterpreter {
                     pc++;
                     break;
                 case 0x11:
+                    auxiliary = code[pageOffset + 2];
                     int tableIndex = popI32();
                     if (auxiliary != 0
                             || tableIndex < 0
@@ -1110,6 +1112,7 @@ public final class WasmInterpreter {
                 case 0x42:
                 case 0x43:
                 case 0x44:
+                    auxiliary = code[pageOffset + 2];
                     push((operand & 0xffffffffL) | ((long) auxiliary << 32));
                     pc++;
                     break;
@@ -1602,6 +1605,7 @@ public final class WasmInterpreter {
                     pc++;
                     break;
                 case WasmModule.W4IR_LOCAL_LOCAL_F32_MUL + WasmModule.W4IR_EXECUTION_OFFSET:
+                    auxiliary = code[pageOffset + 2];
                     pushI32(Float.floatToIntBits(
                             Float.intBitsToFloat((int) locals[operand])
                                     * Float.intBitsToFloat((int) locals[auxiliary])));
@@ -1609,6 +1613,7 @@ public final class WasmInterpreter {
                     pc += 3;
                     break;
                 case WasmModule.W4IR_LOCAL_F32_CONST_MUL + WasmModule.W4IR_EXECUTION_OFFSET:
+                    auxiliary = code[pageOffset + 2];
                     pushI32(Float.floatToIntBits(
                             Float.intBitsToFloat((int) locals[operand])
                                     * Float.intBitsToFloat(auxiliary)));
@@ -1624,26 +1629,31 @@ public final class WasmInterpreter {
                     pc += 3;
                     break;
                 case WasmModule.W4IR_LOCAL_LOCAL_I32_AND + WasmModule.W4IR_EXECUTION_OFFSET:
+                    auxiliary = code[pageOffset + 2];
                     pushI32((int) locals[operand] & (int) locals[auxiliary]);
                     executed += 2;
                     pc += 3;
                     break;
                 case WasmModule.W4IR_LOCAL_LOCAL_I32_ADD + WasmModule.W4IR_EXECUTION_OFFSET:
+                    auxiliary = code[pageOffset + 2];
                     pushI32((int) locals[operand] + (int) locals[auxiliary]);
                     executed += 2;
                     pc += 3;
                     break;
                 case WasmModule.W4IR_LOCAL_I32_CONST_ADD + WasmModule.W4IR_EXECUTION_OFFSET:
+                    auxiliary = code[pageOffset + 2];
                     pushI32((int) locals[operand] + auxiliary);
                     executed += 2;
                     pc += 3;
                     break;
                 case WasmModule.W4IR_LOCAL_I32_CONST_AND + WasmModule.W4IR_EXECUTION_OFFSET:
+                    auxiliary = code[pageOffset + 2];
                     pushI32((int) locals[operand] & auxiliary);
                     executed += 2;
                     pc += 3;
                     break;
                 case WasmModule.W4IR_LOCAL_SET_LOCAL_LOCAL + WasmModule.W4IR_EXECUTION_OFFSET:
+                    auxiliary = code[pageOffset + 2];
                     int setLocalTarget = operand >>> 16;
                     int setLocalFirstSource = operand & 0xffff;
                     locals[setLocalTarget] = pop();
@@ -1653,11 +1663,13 @@ public final class WasmInterpreter {
                     pc += 3;
                     break;
                 case WasmModule.W4IR_LOCAL_I32_CONST_EQ + WasmModule.W4IR_EXECUTION_OFFSET:
+                    auxiliary = code[pageOffset + 2];
                     pushI32((int) locals[operand] == auxiliary ? 1 : 0);
                     executed += 2;
                     pc += 3;
                     break;
                 case WasmModule.W4IR_LOCAL_LOCAL_I32_CONST_AND + WasmModule.W4IR_EXECUTION_OFFSET:
+                    auxiliary = code[pageOffset + 2];
                     int andFirstSource = operand >>> 16;
                     int andSecondSource = operand & 0xffff;
                     push(locals[andFirstSource]);
@@ -1666,6 +1678,7 @@ public final class WasmInterpreter {
                     pc += 4;
                     break;
                 case WasmModule.W4IR_LOCAL_LOCAL_F32_DIV + WasmModule.W4IR_EXECUTION_OFFSET:
+                    auxiliary = code[pageOffset + 2];
                     float divideLeft = Float.intBitsToFloat((int) locals[operand]);
                     float divideRight = Float.intBitsToFloat((int) locals[auxiliary]);
                     pushI32(Float.floatToIntBits(divideLeft / divideRight));
@@ -1673,6 +1686,7 @@ public final class WasmInterpreter {
                     pc += 3;
                     break;
                 case WasmModule.W4IR_LOCAL_SET_F32_CONST_SET + WasmModule.W4IR_EXECUTION_OFFSET:
+                    auxiliary = code[pageOffset + 2];
                     int setConstFirstTarget = operand >>> 16;
                     int setConstSecondTarget = operand & 0xffff;
                     locals[setConstFirstTarget] = pop();
@@ -1681,6 +1695,7 @@ public final class WasmInterpreter {
                     pc += 3;
                     break;
                 case WasmModule.W4IR_LOCAL_LOCAL_F32_LOAD + WasmModule.W4IR_EXECUTION_OFFSET:
+                    auxiliary = code[pageOffset + 2];
                     int loadFirstSource = operand >>> 16;
                     int loadAddressSource = operand & 0xffff;
                     push(locals[loadFirstSource]);
@@ -1716,6 +1731,7 @@ public final class WasmInterpreter {
                     pc += 3;
                     break;
                 case WasmModule.W4IR_LOCAL_LOCAL_F32_MUL_ADD + WasmModule.W4IR_EXECUTION_OFFSET:
+                    auxiliary = code[pageOffset + 2];
                     float localsMultiplyLeft = Float.intBitsToFloat((int) locals[operand]);
                     float localsMultiplyRight = Float.intBitsToFloat((int) locals[auxiliary]);
                     float localsAddLeft = Float.intBitsToFloat(popI32());
@@ -1725,6 +1741,7 @@ public final class WasmInterpreter {
                     pc += 4;
                     break;
                 case WasmModule.W4IR_LOCAL_I32_CONST_EQ_BR_IF + WasmModule.W4IR_EXECUTION_OFFSET:
+                    auxiliary = code[pageOffset + 2];
                     executed += 3;
                     int compareBranchLocal = instruction >>> 16;
                     if ((int) locals[compareBranchLocal] == operand) {
@@ -1764,6 +1781,7 @@ public final class WasmInterpreter {
                     }
                     break;
                 case WasmModule.W4IR_LOCAL_TEE_MUL_ADD_SET_LOCAL_LOCAL + WasmModule.W4IR_EXECUTION_OFFSET:
+                    auxiliary = code[pageOffset + 2];
                     int teeCombinedTarget = instruction >>> 16;
                     locals[teeCombinedTarget] = peek();
                     float teeCombinedMultiplyRight = Float.intBitsToFloat(popI32());
@@ -1794,6 +1812,7 @@ public final class WasmInterpreter {
                     pc += 4;
                     break;
                 case WasmModule.W4IR_F32_LOAD_LOCAL_MUL_ADD + WasmModule.W4IR_EXECUTION_OFFSET:
+                    auxiliary = code[pageOffset + 2];
                     int loadMultiplyAddress = address(operand, 4);
                     float loadMultiplyLeft =
                             Float.intBitsToFloat(loadI32(loadMultiplyAddress));
@@ -1805,6 +1824,7 @@ public final class WasmInterpreter {
                     pc += 4;
                     break;
                 case WasmModule.W4IR_LOCAL_ADD_SET_BR + WasmModule.W4IR_EXECUTION_OFFSET:
+                    auxiliary = code[pageOffset + 2];
                     executed += 4;
                     if (InterpreterBuildConfig.DESCRIPTOR_SHADOW) {
                         pc = executeLocalAddSetBranchShadow(
@@ -1832,17 +1852,20 @@ public final class WasmInterpreter {
                     }
                     break;
                 case WasmModule.W4IR_LOCAL_SET_ADD_SET + WasmModule.W4IR_EXECUTION_OFFSET:
+                    auxiliary = code[pageOffset + 2];
                     executeLocalSetAddSet(instruction, operand, auxiliary, locals);
                     executed += 4;
                     pc += 5;
                     break;
                 case WasmModule.W4IR_LOCAL_SET_LOCAL_LOCAL_F32_LOAD + WasmModule.W4IR_EXECUTION_OFFSET:
+                    auxiliary = code[pageOffset + 2];
                     executeLocalSetLocalLocalF32Load(
                             instruction, operand, auxiliary, locals);
                     executed += 3;
                     pc += 4;
                     break;
                 case WasmModule.W4IR_LOCAL_LOCAL_F32_LOAD_LOCAL + WasmModule.W4IR_EXECUTION_OFFSET:
+                    auxiliary = code[pageOffset + 2];
                     executeLocalLocalF32LoadLocal(
                             instruction, operand, auxiliary, locals);
                     executed += 3;
@@ -1859,18 +1882,21 @@ public final class WasmInterpreter {
                     pc += 2;
                     break;
                 case WasmModule.W4IR_F32_DIV_TEE_MUL_ADD_SET_LOCAL_LOCAL + WasmModule.W4IR_EXECUTION_OFFSET:
+                    auxiliary = code[pageOffset + 2];
                     executeF32DivTeeMulAddSetLocalLocal(
                             instruction, operand, auxiliary, locals);
                     executed += 6;
                     pc += 7;
                     break;
                 case WasmModule.W4IR_F32_LOAD_LOCAL_MUL_ADD_SET + WasmModule.W4IR_EXECUTION_OFFSET:
+                    auxiliary = code[pageOffset + 2];
                     executeF32LoadLocalMulAddSet(
                             instruction, operand, auxiliary, locals);
                     executed += 4;
                     pc += 5;
                     break;
                 case WasmModule.W4IR_BR_IF_LOCAL_I32_CONST + WasmModule.W4IR_EXECUTION_OFFSET:
+                    auxiliary = code[pageOffset + 2];
                     this.instructionsExecuted = executed;
                     counterInField = true;
                     if (InterpreterBuildConfig.DESCRIPTOR_SHADOW) {
@@ -1902,38 +1928,45 @@ public final class WasmInterpreter {
                     }
                     break;
                 case WasmModule.W4IR_LOCAL_TRIPLE_F32_STORE + WasmModule.W4IR_EXECUTION_OFFSET:
+                    auxiliary = code[pageOffset + 2];
                     executeLocalTripleF32Store(instruction, operand, auxiliary, locals);
                     executed += 8;
                     pc += 9;
                     break;
                 case WasmModule.W4IR_LOCAL4_F32_MUL_ADD_TEE + WasmModule.W4IR_EXECUTION_OFFSET:
+                    auxiliary = code[pageOffset + 2];
                     executeLocal4F32MulAddTee(instruction, operand, auxiliary, locals);
                     executed += 7;
                     pc += 8;
                     break;
                 case WasmModule.W4IR_F32_LOAD_NEG_INDEX_DIV + WasmModule.W4IR_EXECUTION_OFFSET:
+                    auxiliary = code[pageOffset + 2];
                     executeF32LoadNegIndexDiv(instruction, operand, auxiliary, locals);
                     executed += 10;
                     pc += 11;
                     break;
                 case WasmModule.W4IR_TRIPLE_F32_STORE_LOCAL_LOAD_LOCAL + WasmModule.W4IR_EXECUTION_OFFSET:
+                    auxiliary = code[pageOffset + 2];
                     executeTripleF32StoreLocalLoadLocal(
                             instruction, operand, auxiliary, locals);
                     executed += 12;
                     pc += 13;
                     break;
                 case WasmModule.W4IR_LOCAL_TEE_MUL_ADD_SET_LOAD_MUL_ADD + WasmModule.W4IR_EXECUTION_OFFSET:
+                    auxiliary = code[pageOffset + 2];
                     executeLocalTeeMulAddSetLoadMulAdd(
                             instruction, operand, auxiliary, locals);
                     executed += 9;
                     pc += 10;
                     break;
                 case WasmModule.W4IR_LOCAL_SET_DUAL_ADD_SET + WasmModule.W4IR_EXECUTION_OFFSET:
+                    auxiliary = code[pageOffset + 2];
                     executeLocalSetDualAddSet(instruction, operand, auxiliary, locals);
                     executed += 8;
                     pc += 9;
                     break;
                 case WasmModule.W4IR_COUNTED_F32_TRACE + WasmModule.W4IR_EXECUTION_OFFSET:
+                    auxiliary = code[pageOffset + 2];
                     this.instructionsExecuted = executed;
                     counterInField = true;
                     if (traceExecutorEnabled) {
@@ -1989,6 +2022,7 @@ public final class WasmInterpreter {
                     pc++;
                     break;
                 case WasmModule.W4IR_I32_LOAD_LOCAL_TEE + WasmModule.W4IR_EXECUTION_OFFSET:
+                    auxiliary = code[pageOffset + 2];
                     pushI32(loadI32(address(operand, 4)));
                     executed++;
                     if (executed > instructionLimit) {
@@ -1998,6 +2032,7 @@ public final class WasmInterpreter {
                     pc += 2;
                     break;
                 case WasmModule.W4IR_LOCAL_LOCAL + WasmModule.W4IR_EXECUTION_OFFSET:
+                    auxiliary = code[pageOffset + 2];
                     push(locals[operand]);
                     push(locals[auxiliary]);
                     executed++;
@@ -2005,6 +2040,7 @@ public final class WasmInterpreter {
                     break;
                 case WasmModule.W4IR_LOCAL_I32_CONST + WasmModule.W4IR_EXECUTION_OFFSET:
                 case WasmModule.W4IR_LOCAL_F32_CONST + WasmModule.W4IR_EXECUTION_OFFSET:
+                    auxiliary = code[pageOffset + 2];
                     push(locals[operand]);
                     push(auxiliary);
                     executed++;
@@ -2036,23 +2072,27 @@ public final class WasmInterpreter {
                     pc += 2;
                     break;
                 case WasmModule.W4IR_LOCAL_SET_GET + WasmModule.W4IR_EXECUTION_OFFSET:
+                    auxiliary = code[pageOffset + 2];
                     locals[operand] = pop();
                     push(locals[auxiliary]);
                     executed++;
                     pc += 2;
                     break;
                 case WasmModule.W4IR_LOCAL_SET_F32_CONST + WasmModule.W4IR_EXECUTION_OFFSET:
+                    auxiliary = code[pageOffset + 2];
                     locals[auxiliary] = operand;
                     executed++;
                     pc += 2;
                     break;
                 case WasmModule.W4IR_F32_MUL_LOCAL + WasmModule.W4IR_EXECUTION_OFFSET:
+                    auxiliary = code[pageOffset + 2];
                     binaryF32(0x94);
                     push(locals[auxiliary]);
                     executed++;
                     pc += 2;
                     break;
                 case WasmModule.W4IR_LOCAL_I32_CONST_ADD_SET + WasmModule.W4IR_EXECUTION_OFFSET:
+                    auxiliary = code[pageOffset + 2];
                     while (true) {
                         int addSource = operand >>> 16;
                         int addTarget = operand & 0xffff;
@@ -2082,6 +2122,7 @@ public final class WasmInterpreter {
                     }
                     break;
                 case WasmModule.W4IR_LOCAL_LOCAL_F32_STORE + WasmModule.W4IR_EXECUTION_OFFSET:
+                    auxiliary = code[pageOffset + 2];
                     while (true) {
                         int storeAddressLocal = operand >>> 16;
                         int storeValueLocal = operand & 0xffff;
