@@ -1,0 +1,37 @@
+{
+  "format": "w4bench-calibration-v1",
+  "recorded_on": "2026-07-29",
+  "profile": "w4bench-v1",
+  "profile_state": "FROZEN",
+  "profile_crc32": "d7e9d1a5",
+  "contract_crc32": "dc547337",
+  "work_crc32": "63991fb5",
+  "profile_sha256": "4a6c2788b709742fd2c6ecb3222f9d8893dac9ace887785bc10c84c94e2ac8cd",
+  "generated_profile_sha256": "a5b0c153f957dffa305ec3a0015d7fe9910f9c54ec38f69382de757fb41cece5",
+  "cartridge_sha256": "a0ed8586a7114146a887d096f865bc121015849d7f1c4477246e1adcc7ebe5af",
+  "vm": {
+    "architecture": "i686",
+    "sha256": "bb4866969747430bb619d139c75ab31982e8967aa0e2dcc3e278fcc7920839a2",
+    "jit": false,
+    "heap_capacity": "64M"
+  },
+  "preverified_artifact_sha256": "6daff67aad59ceb90ee7b1b5878f2fa60a44bccefe23197319da98dff1662192",
+  "samples": 3,
+  "warmups_per_sample": 1,
+  "measured_repetitions_per_sample": 9,
+  "minimum_timed_ms": 180,
+  "median_wall_ms": {
+    "i32-control": 252,
+    "direct-calls-locals": 302,
+    "call-indirect-table": 354,
+    "memory-widths": 268,
+    "i64": 293,
+    "f32": 311,
+    "f64": 287
+  },
+  "coverage": {
+    "source_opcodes": 190,
+    "expected_traps": 1,
+    "semantic_sentinels": "exact"
+  }
+}

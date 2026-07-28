@@ -33,6 +33,8 @@ case "${PAIRED_DIRTY_ACTUAL}" in
 esac
 printf 'paired-stats:pass dirty-source-classification\n'
 
+"${ROOT_DIR}/tools/bench/run.sh" w4bench
+
 TEST_DIR="${ROOT_DIR}/build/test"
 CLASSES_DIR="${TEST_DIR}/classes"
 FRAMEBUFFER="${TEST_DIR}/mandelbrot-framebuffer.bin"

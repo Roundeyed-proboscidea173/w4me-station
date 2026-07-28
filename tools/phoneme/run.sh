@@ -843,7 +843,24 @@ cmd_bench() {
 
 prepare_phoneme_component() {
     COMPONENT_OUT_DIR="$1"
-    COMPONENT_SOURCE="$2"
+    shift
+    COMPONENT_SOURCES=()
+    COMPONENT_RESOURCES=()
+    COMPONENT_ARGUMENT_KIND="source"
+    while [ "$#" -gt 0 ]; do
+        if [ "$1" = "--" ]; then
+            COMPONENT_ARGUMENT_KIND="resource"
+        elif [ "${COMPONENT_ARGUMENT_KIND}" = "source" ]; then
+            COMPONENT_SOURCES+=("$1")
+        else
+            COMPONENT_RESOURCES+=("$1")
+        fi
+        shift
+    done
+    if [ "${#COMPONENT_SOURCES[@]}" -eq 0 ]; then
+        printf 'error: phoneME component requires at least one Java source\n' >&2
+        exit 1
+    fi
     PHONEME_HOME="${PHONEME_HOME:-${ROOT_DIR}/.local/phoneme}"
     COMPONENT_VM="${PHONEME_HOME}/cldc_vm_r"
     COMPONENT_PREVERIFY="${PHONEME_HOME}/preverify"
@@ -880,7 +897,7 @@ prepare_phoneme_component() {
     {
         printf '%s\n' \
             "${ROOT_DIR}/bench/configs/timed/java/w4me/wasm/InterpreterBuildConfig.java"
-        printf '%s\n' "${COMPONENT_SOURCE}"
+        printf '%s\n' "${COMPONENT_SOURCES[@]}"
     } >>"${COMPONENT_OUT_DIR}/sources.list"
     javac \
         -nowarn \
@@ -895,10 +912,11 @@ prepare_phoneme_component() {
         -classpath "${COMPONENT_CLASSES}" \
         -d "${COMPONENT_OUT_DIR}/preverified" \
         "${COMPONENT_OUT_DIR}/classes"
-    cp -- \
-        "${ROOT_DIR}/src/main/resources/w4font.bin" \
-        "${ROOT_DIR}/cartridges/waternet.wasm" \
+    cp -- "${ROOT_DIR}/src/main/resources/w4font.bin" \
         "${COMPONENT_OUT_DIR}/preverified/"
+    if [ "${#COMPONENT_RESOURCES[@]}" -gt 0 ]; then
+        cp -- "${COMPONENT_RESOURCES[@]}" "${COMPONENT_OUT_DIR}/preverified/"
+    fi
 
     COMPONENT_ARTIFACT_SHA256="$(
         cd -- "${COMPONENT_OUT_DIR}/preverified"
@@ -987,7 +1005,9 @@ cmd_bench_pcm() {
     local receipt="${out_dir}/receipt.txt"
     prepare_phoneme_component \
         "${out_dir}" \
-        "${ROOT_DIR}/src/test/java/w4me/PhoneMePcmBench.java"
+        "${ROOT_DIR}/src/test/java/w4me/PhoneMePcmBench.java" \
+        -- \
+        "${ROOT_DIR}/cartridges/waternet.wasm"
     write_component_header \
         "${receipt}" pcm \
         "workload=${workload} cycles=${cycles} reps=${reps} heap-capacity=${heap_capacity}"
@@ -1077,7 +1097,9 @@ cmd_bench_argb() {
     local receipt="${out_dir}/receipt.txt"
     prepare_phoneme_component \
         "${out_dir}" \
-        "${ROOT_DIR}/src/test/java/w4me/PhoneMeArgbBandBench.java"
+        "${ROOT_DIR}/src/test/java/w4me/PhoneMeArgbBandBench.java" \
+        -- \
+        "${ROOT_DIR}/cartridges/waternet.wasm"
     write_component_header \
         "${receipt}" argb \
         "side=${side} band-height=${band_height} frames=${frames} reps=${reps} heap-capacity=${heap_capacity}"
@@ -1118,6 +1140,204 @@ cmd_bench_argb() {
     done
     printf 'phoneme-component-bench:median component=argb reps=%s us-per-frame=%s output-fnv1a=%s\n' \
         "${reps}" "$(component_median "${out_dir}/metrics.txt")" "${expected_hash}" |
+        tee -a "${receipt}"
+    printf 'receipt: %s\n' "${receipt}"
+}
+
+cmd_bench_w4bench() {
+    local samples=3
+    local heap_capacity="64M"
+    local candidate="current"
+    while [ "$#" -gt 0 ]; do
+        case "$1" in
+        --samples)
+            samples="$2"
+            shift 2
+            ;;
+        --heap-capacity)
+            heap_capacity="$2"
+            shift 2
+            ;;
+        --candidate)
+            candidate="$2"
+            shift 2
+            ;;
+        *)
+            printf 'error: unknown bench-w4bench option: %s\n' "$1" >&2
+            exit 2
+            ;;
+        esac
+    done
+    if ! [[ "${samples}" =~ ^[1-9][0-9]*$ ]]; then
+        printf 'error: samples must be a positive integer\n' >&2
+        exit 2
+    fi
+    case "${heap_capacity}" in
+    '' | [!0-9]* | *[!0-9KMGkmg]* | *[KMGkmg][0-9KMGkmg]*)
+        printf 'error: heap capacity must be an integer with optional K, M, or G suffix: %s\n' \
+            "${heap_capacity}" >&2
+        exit 2
+        ;;
+    esac
+    case "${candidate}" in
+    '' | *[[:space:]]*)
+        printf 'error: candidate must be one non-empty token\n' >&2
+        exit 2
+        ;;
+    esac
+
+    "${ROOT_DIR}/tools/bench/run.sh" w4bench
+
+    local out_dir="${ROOT_DIR}/build/reports/w4bench/v1"
+    local receipt="${out_dir}/receipt.txt"
+    local profile="${ROOT_DIR}/bench/w4bench/profile_v1.json"
+    local host_gate_dir="${ROOT_DIR}/build/reports/bench/w4bench"
+    local generated_profile="${host_gate_dir}/generated/java/w4me/W4BenchProfile.java"
+    local cartridge="${ROOT_DIR}/bench/w4bench/w4bench-v1.wasm"
+    local profile_state
+    profile_state="$(
+        sed -n 's/^[[:space:]]*"state":[[:space:]]*"\([^"]*\)".*/\1/p' \
+            "${profile}"
+    )"
+    if [ "${profile_state}" != "FROZEN" ]; then
+        printf 'error: authoritative W4Bench timing requires a FROZEN profile\n' >&2
+        exit 1
+    fi
+    prepare_phoneme_component \
+        "${out_dir}" \
+        "${generated_profile}" \
+        "${ROOT_DIR}/src/test/java/w4me/W4BenchRunner.java" \
+        -- \
+        "${cartridge}"
+    cp -- "${host_gate_dir}/oracle.txt" "${out_dir}/host-oracle.txt"
+    cp -- "${host_gate_dir}/opcode-coverage.txt" \
+        "${out_dir}/host-opcode-coverage.txt"
+    cp -- "${host_gate_dir}/verification.txt" \
+        "${out_dir}/host-verification.txt"
+    write_component_header \
+        "${receipt}" w4bench \
+        "profile=w4bench-v1 profile-state=${profile_state} timing-authoritative=yes samples=${samples} repetitions=9 heap-capacity=${heap_capacity} candidate=${candidate}"
+    {
+        printf 'profile-sha256=%s\n' \
+            "$(sha256sum -- "${profile}" | cut -d ' ' -f 1)"
+        printf 'generated-profile-sha256=%s\n' \
+            "$(sha256sum -- "${generated_profile}" | cut -d ' ' -f 1)"
+        printf 'cartridge-sha256=%s\n' \
+            "$(sha256sum -- "${cartridge}" | cut -d ' ' -f 1)"
+        printf 'calibration-sha256=%s\n' \
+            "$(sha256sum -- "${ROOT_DIR}/bench/w4bench/calibration_v1.json" | cut -d ' ' -f 1)"
+        printf 'host-oracle-output-sha256=%s\n' \
+            "$(sha256sum -- "${out_dir}/host-oracle.txt" | cut -d ' ' -f 1)"
+        printf 'host-coverage-output-sha256=%s\n' \
+            "$(sha256sum -- "${out_dir}/host-opcode-coverage.txt" | cut -d ' ' -f 1)"
+        printf 'host-verification-output-sha256=%s\n' \
+            "$(sha256sum -- "${out_dir}/host-verification.txt" | cut -d ' ' -f 1)"
+        printf 'host-oracle-source-sha256=%s\n' \
+            "$(sha256sum -- "${ROOT_DIR}/bench/w4bench/reference_oracle.py" | cut -d ' ' -f 1)"
+        printf 'host-coverage-source-sha256=%s\n' \
+            "$(sha256sum -- "${ROOT_DIR}/src/test/java/w4me/wasm/W4BenchOpcodeCoverageSmoke.java" | cut -d ' ' -f 1)"
+        printf 'coverage=all-190-source-opcodes expected-traps=1 timed-coverage=no\n'
+    } >>"${receipt}"
+
+    local expected_profile_crc=""
+    local expected_contract_crc=""
+    local expected_work_crc=""
+    local expected_test_index=""
+    local sample=0
+    while [ "${sample}" -lt "${samples}" ]; do
+        local result="${out_dir}/sample-${sample}.txt"
+        if ! "${COMPONENT_VM}" -EnableTicks "=HeapCapacity${heap_capacity}" \
+            -classpath "${COMPONENT_CLASSES}:${out_dir}/preverified" \
+            w4me.W4BenchRunner "${candidate}" "${sample}" timed \
+            >"${result}" 2>&1; then
+            cat -- "${result}" >&2
+            exit 1
+        fi
+
+        local coverage_count
+        local validator_count
+        local final_count
+        local median_count
+        local repetition_count
+        coverage_count="$(grep -c -F -- 'w4bench:coverage ' "${result}" || true)"
+        validator_count="$(grep -c -F -- 'w4bench:validator-negative ' "${result}" || true)"
+        final_count="$(grep -c -E -- 'w4bench:pass .* work-crc=' "${result}" || true)"
+        median_count="$(grep -c -E -- 'w4bench:pass .* median-wall-ms=' "${result}" || true)"
+        repetition_count="$(grep -c -E -- 'w4bench:pass .* rep=[0-9]+ ' "${result}" || true)"
+        if [ "${coverage_count}" -ne 1 ] ||
+            [ "${validator_count}" -ne 1 ] ||
+            [ "${final_count}" -ne 1 ] ||
+            [ "${median_count}" -ne 7 ] ||
+            [ "${repetition_count}" -ne 63 ]; then
+            printf 'error: incomplete W4Bench sample %s: coverage=%s validator-negative=%s final=%s medians=%s repetitions=%s\n' \
+                "${sample}" "${coverage_count}" "${validator_count}" \
+                "${final_count}" "${median_count}" "${repetition_count}" >&2
+            cat -- "${result}" >&2
+            exit 1
+        fi
+
+        local sample_medians
+        local sample_test_index
+        sample_medians="${out_dir}/sample-${sample}-medians.txt"
+        sed -n \
+            's/.* test-id=\([^ ]*\) test=\([^ ]*\) median-wall-ms=\([0-9][0-9]*\).*/\1 \2 \3/p' \
+            "${result}" >"${sample_medians}"
+        sample_test_index="$(awk '{ print $1, $2 }' "${sample_medians}")"
+        if [ "${sample}" -eq 0 ]; then
+            expected_test_index="${sample_test_index}"
+        elif [ "${sample_test_index}" != "${expected_test_index}" ]; then
+            printf 'error: W4Bench test index changed at sample %s\n' "${sample}" >&2
+            exit 1
+        fi
+        while read -r test_id test_name metric; do
+            if [ "${sample}" -eq 0 ]; then
+                : >"${out_dir}/metrics-test-${test_id}.txt"
+            fi
+            printf '%s\n' "${metric}" >>"${out_dir}/metrics-test-${test_id}.txt"
+        done <"${sample_medians}"
+
+        local final_line
+        local profile_crc
+        local contract_crc
+        local work_crc
+        final_line="$(grep -E -- 'w4bench:pass .* work-crc=' "${result}")"
+        profile_crc="$(
+            printf '%s\n' "${final_line}" |
+                sed -n 's/.* profile-crc=\([0-9a-f][0-9a-f]*\).*/\1/p'
+        )"
+        contract_crc="$(
+            printf '%s\n' "${final_line}" |
+                sed -n 's/.* contract-crc=\([0-9a-f][0-9a-f]*\).*/\1/p'
+        )"
+        work_crc="$(
+            printf '%s\n' "${final_line}" |
+                sed -n 's/.* work-crc=\([0-9a-f][0-9a-f]*\).*/\1/p'
+        )"
+        if [ -z "${expected_profile_crc}" ]; then
+            expected_profile_crc="${profile_crc}"
+            expected_contract_crc="${contract_crc}"
+            expected_work_crc="${work_crc}"
+        elif [ "${profile_crc}" != "${expected_profile_crc}" ] ||
+            [ "${contract_crc}" != "${expected_contract_crc}" ] ||
+            [ "${work_crc}" != "${expected_work_crc}" ]; then
+            printf 'error: W4Bench identity changed at sample %s\n' "${sample}" >&2
+            exit 1
+        fi
+        grep -E -- 'w4bench:(coverage|validator-negative|pass).* (median-wall-ms|work-crc|opcodes=|corrupt-result=)' \
+            "${result}" |
+            tee -a "${receipt}"
+        sample=$((sample + 1))
+    done
+
+    while read -r test_id test_name; do
+        printf 'phoneme-component-bench:median component=w4bench test-id=%s test=%s samples=%s median-wall-ms=%s\n' \
+            "${test_id}" "${test_name}" "${samples}" \
+            "$(component_median "${out_dir}/metrics-test-${test_id}.txt")" |
+            tee -a "${receipt}"
+    done <<<"${expected_test_index}"
+    printf 'phoneme-component-bench:pass component=w4bench samples=%s repetitions=9 profile-crc=%s contract-crc=%s work-crc=%s\n' \
+        "${samples}" "${expected_profile_crc}" "${expected_contract_crc}" \
+        "${expected_work_crc}" |
         tee -a "${receipt}"
     printf 'receipt: %s\n' "${receipt}"
 }
@@ -1250,6 +1470,10 @@ bench-argb)
     shift
     cmd_bench_argb "$@"
     ;;
+bench-w4bench)
+    shift
+    cmd_bench_w4bench "$@"
+    ;;
 verify)
     shift
     cmd_bench waternet rubido untangle game-of-life-zig-edition duck-maze \
@@ -1261,7 +1485,7 @@ verify-arm64)
     ;;
 *)
     printf '%s\n' \
-        'usage: tools/phoneme/run.sh <bench|bench-pcm|bench-argb|verify|verify-arm64> [args...]' \
+        'usage: tools/phoneme/run.sh <bench|bench-pcm|bench-argb|bench-w4bench|verify|verify-arm64> [args...]' \
         >&2
     exit 1
     ;;

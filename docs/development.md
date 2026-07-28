@@ -8,6 +8,7 @@ src/test/             host and MIDP verification harnesses
 cartridges/           bundled upstream WASM-4 cartridges
 testdata/oracles/     immutable exact replay fixtures
 bench/configs/        compile-time interpreter benchmark configurations
+bench/w4bench/        deterministic synthetic benchmark and frozen contract
 tools/                build, verification, emulator, and benchmark entrypoints
 openspec/             accepted and proposed product changes
 ```
@@ -43,6 +44,7 @@ just run         # open the station in KEmulator
 just bench       # native phoneME corpus benchmark
 just bench-pcm   # native phoneME PCM synthesis benchmark
 just bench-argb  # native phoneME framebuffer conversion benchmark
+just bench-w4bench # deterministic synthetic interpreter benchmark
 just release     # complete release gate and SHA256SUMS
 ```
 
@@ -53,8 +55,8 @@ subcommands rather than one script per scenario:
 tools/kemu/run.sh session <start|cmd|stop> [args...]
 tools/kemu/run.sh verify <scenario> [jar]
 tools/kemu/run.sh bench <scenario> [args...]
-tools/phoneme/run.sh <bench|bench-pcm|bench-argb|verify|verify-arm64> [args...]
-tools/bench/run.sh <untangle|corpus|fusions>
+tools/phoneme/run.sh <bench|bench-pcm|bench-argb|bench-w4bench|verify|verify-arm64> [args...]
+tools/bench/run.sh <untangle|corpus|fusions|w4bench>
 tools/verify.sh <jar|counterless> [args...]
 ```
 

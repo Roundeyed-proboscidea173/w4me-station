@@ -46,6 +46,7 @@ just bench rubido --mode optimized --reps 8
 just bench game-of-life-zig-edition --reps 8
 just bench-pcm waternet --cycles 20 --reps 5
 just bench-argb --side 160 --band-height 16 --frames 100 --reps 5
+just bench-w4bench
 tools/phoneme/run.sh verify
 tools/phoneme/run.sh verify-arm64
 ```
@@ -71,6 +72,18 @@ the recorded route and is therefore rejected unless `--unverified-idle` is
 also present.
 
 Generated artifacts and receipts are written to `build/reports/phoneme/`.
+
+## Synthetic cartridge benchmark
+
+`just bench-w4bench` runs seven fixed interpreter workloads on native i686
+phoneME. It also performs an untimed 190/190 source-opcode reachability sweep,
+checks exact results with an independent oracle, and rejects timer samples
+below the calibrated resolution floor. The canonical receipt is
+`build/reports/w4bench/v1/receipt.txt`.
+
+W4Bench is a diagnostic breakdown, not a replacement for exact game routes or
+paired A/B measurements. Its compact contract and maintenance notes live in
+[`bench/w4bench/README.md`](../bench/w4bench/README.md).
 
 ## Acceptance rules
 

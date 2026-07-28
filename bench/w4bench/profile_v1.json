@@ -1,0 +1,27 @@
+{
+  "format": "w4bench-profile-v1",
+  "state": "FROZEN",
+  "contract_version": 1,
+  "warmup_runs": 1,
+  "measured_runs": 9,
+  "min_timed_ms": 180,
+  "instruction_limit": 150000000,
+  "result_offset": 8192,
+  "result_length": 32,
+  "tests": [
+    { "id": 1, "name": "i32-control", "seed": "0x13579bdf", "work_units": 65536, "prepare_export": "prepare_i32_control", "run_export": "run_i32_control" },
+    { "id": 2, "name": "direct-calls-locals", "seed": "0x2468ace1", "work_units": 73728, "prepare_export": "prepare_direct_calls_locals", "run_export": "run_direct_calls_locals" },
+    { "id": 3, "name": "call-indirect-table", "seed": "0x10293847", "work_units": 73728, "prepare_export": "prepare_call_indirect_table", "run_export": "run_call_indirect_table" },
+    { "id": 4, "name": "memory-widths", "seed": "0x55aa7711", "work_units": 32768, "prepare_export": "prepare_memory_widths", "run_export": "run_memory_widths" },
+    { "id": 5, "name": "i64", "seed": "0x6c8e9cf1", "work_units": 98304, "prepare_export": "prepare_i64", "run_export": "run_i64" },
+    { "id": 6, "name": "f32", "seed": "0x3f800001", "work_units": 131072, "prepare_export": "prepare_f32", "run_export": "run_f32" },
+    { "id": 7, "name": "f64", "seed": "0x400921fb", "work_units": 81920, "prepare_export": "prepare_f64", "run_export": "run_f64" }
+  ],
+  "opcode_validation": {
+    "mode": "CATALOG_SWEEP",
+    "catalog": "opcode_catalog_v1.json",
+    "required_coverage": "ALL_SUPPORTED_SOURCE_OPCODES",
+    "timed_score_excludes_validation": true,
+    "expected_trap_exports": ["trap_unreachable"]
+  }
+}

@@ -43,6 +43,10 @@ bench-pcm *args:
 bench-argb *args:
     ./tools/phoneme/run.sh bench-argb {{ args }}
 
+# Run the deterministic W4Bench suite on native no-JIT phoneME.
+bench-w4bench *args:
+    ./tools/phoneme/run.sh bench-w4bench {{ args }}
+
 # Re-run all release checks and write dist/SHA256SUMS.
 release:
     ./tools/release.sh
