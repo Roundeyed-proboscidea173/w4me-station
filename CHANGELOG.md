@@ -1,5 +1,30 @@
 # Changelog
 
+## 1.0.2 — 2026-07-28
+
+This release further reduces universal interpreter overhead without changing
+the cartridge format, controls, storage, or installation requirements.
+
+### Performance
+
+- avoids repeated compact-tier eligibility work in the outer dispatch loop;
+- folds compact-tier activation into the existing instruction-budget boundary;
+- packs control-frame metadata into one array instead of three parallel arrays;
+- removes an extra Java method call from common 32-bit stack pushes and pops.
+
+The Duck Maze host benchmark now enters gameplay, and the phoneME benchmark
+replays and validates the complete 155-frame level-one route instead of timing
+an idle screen.
+
+Twelve balanced native i686 phoneME pairs per workload measured median headless
+frame-time reductions of 5.464% in Waternet, 6.684% in Rubido, 4.931% in
+Untangle, 7.005% in Game of Life, 3.214% in Plasma Cube, and 3.681% on the Duck
+Maze level-one route compared with `main@7a77b08`. Exact instruction counts and
+oracle checkpoints remained unchanged.
+
+These measurements use a CLDC 1.1 C interpreter without a JIT. They exclude
+MIDP presentation and audio latency and are not physical-device FPS figures.
+
 ## 1.0.1 — 2026-07-27
 
 This release improves the universal Java ME runtime without changing the

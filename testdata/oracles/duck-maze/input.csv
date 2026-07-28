@@ -1,0 +1,9 @@
+frame,gamepad,mouse_x,mouse_y,mouse_buttons,action
+0,0,0,0,0,idle
+1,1,0,0,0,start
+2,0,0,0,0,release-start
+3,128,0,0,0,right-32
+35,32,0,0,0,down-24
+59,128,0,0,0,right-16
+75,32,0,0,0,down-32
+107,64,0,0,0,left-48

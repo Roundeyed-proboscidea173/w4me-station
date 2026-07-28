@@ -37,12 +37,10 @@ public final class WasmInterpreter {
     private final long[] values = new long[VALUE_STACK_LIMIT];
     private int valueTop;
 
-    private final int[] controlKind = new int[CONTROL_STACK_LIMIT];
+    private final int[] controlWord = new int[CONTROL_STACK_LIMIT];
     private final int[] controlStart = new int[CONTROL_STACK_LIMIT];
     private final int[] controlEnd = new int[CONTROL_STACK_LIMIT];
     private final int[] controlBase = new int[CONTROL_STACK_LIMIT];
-    private final int[] controlParameters = new int[CONTROL_STACK_LIMIT];
-    private final int[] controlResults = new int[CONTROL_STACK_LIMIT];
     private int controlTop;
 
     private final long[][] localFrames = new long[CALL_STACK_LIMIT][];
@@ -548,6 +546,14 @@ public final class WasmInterpreter {
                         && (!InterpreterBuildConfig.PROFILING_SUPPORT || !profilingEnabled)
                         && residentCode;
         int[] compactEnds = null;
+        int budgetCheckLimit = instructionLimit;
+        if (compactEligible) {
+            if (instructionsExecuted >= COMPACT_HOT_INVOCATION_THRESHOLD) {
+                compactEnds = compactBlockEnds(functionIndex, body);
+            } else if (COMPACT_HOT_INVOCATION_THRESHOLD < budgetCheckLimit) {
+                budgetCheckLimit = COMPACT_HOT_INVOCATION_THRESHOLD;
+            }
+        }
         int[] branchSiteByPc = null;
         int[] branchTargetBySite = null;
         int[] branchHeightBySite = null;
@@ -561,22 +567,17 @@ public final class WasmInterpreter {
             branchControlBySite = body.branchFastControls;
         }
         while (pc < instructionCount) {
-            int compactEnd = 0;
-            if (compactEligible
-                    && instructionsExecuted >= COMPACT_HOT_INVOCATION_THRESHOLD) {
-                if (compactEnds == null) {
-                    compactEnds = compactBlockEnds(functionIndex, body);
+            if (compactEnds != null) {
+                int compactEnd = pc < compactEnds.length ? compactEnds[pc] : 0;
+                if (compactEnd > pc) {
+                    if (InterpreterBuildConfig.DIAGNOSTIC_COUNTERS) {
+                        dispatchesExecuted++;
+                        compactBlockCalls++;
+                    }
+                    executeCompactBlock(body.code, pc, compactEnd, locals);
+                    pc = compactEnd;
+                    continue;
                 }
-                compactEnd = pc < compactEnds.length ? compactEnds[pc] : 0;
-            }
-            if (compactEnd > pc) {
-                if (InterpreterBuildConfig.DIAGNOSTIC_COUNTERS) {
-                    dispatchesExecuted++;
-                    compactBlockCalls++;
-                }
-                executeCompactBlock(body.code, pc, compactEnd, locals);
-                pc = compactEnd;
-                continue;
             }
             int codeOffset = pc * WasmModule.W4IR_STRIDE;
             if ((!InterpreterBuildConfig.RESIDENT_CODE_FAST_PATH || !residentCode)
@@ -590,6 +591,15 @@ public final class WasmInterpreter {
             int opcode = instruction & 0xffff;
             int operand = code[pageOffset + 1];
             int auxiliary = code[pageOffset + 2];
+            if (instructionsExecuted >= budgetCheckLimit) {
+                if (instructionsExecuted >= instructionLimit) {
+                    instructionsExecuted++;
+                    throw new WasmTrap("instruction budget exhausted");
+                }
+                compactEnds = compactBlockEnds(functionIndex, body);
+                budgetCheckLimit = instructionLimit;
+                continue;
+            }
             instructionsExecuted++;
             if (InterpreterBuildConfig.DIAGNOSTIC_COUNTERS) {
                 dispatchesExecuted++;
@@ -604,10 +614,6 @@ public final class WasmInterpreter {
                 previousPreviousOpcode = previousOpcode;
                 previousOpcode = WasmModule.originalOpcode(opcode);
             }
-            if (instructionsExecuted > instructionLimit) {
-                throw new WasmTrap("instruction budget exhausted");
-            }
-
             switch (opcode) {
                 case 0x00:
                     throw new WasmTrap("unreachable instruction executed");
@@ -624,13 +630,12 @@ public final class WasmInterpreter {
                     if (controlBaseIndex < 0) {
                         throw new WasmTrap("not enough block parameters");
                     }
-                    controlKind[controlTop] = instruction & 0xffff;
-                    controlStart[controlTop] = pc;
-                    controlEnd[controlTop] = operand;
-                    controlBase[controlTop] = controlBaseIndex;
-                    controlParameters[controlTop] = controlParameterCount;
-                    controlResults[controlTop] = instruction >>> 24;
-                    controlTop++;
+                    int controlEntryFrame = controlTop;
+                    controlWord[controlEntryFrame] = instruction;
+                    controlStart[controlEntryFrame] = pc;
+                    controlEnd[controlEntryFrame] = operand;
+                    controlBase[controlEntryFrame] = controlBaseIndex;
+                    controlTop = controlEntryFrame + 1;
                     pc++;
                     break;
                 }
@@ -644,13 +649,12 @@ public final class WasmInterpreter {
                     if (ifControlBase < 0) {
                         throw new WasmTrap("not enough block parameters");
                     }
-                    controlKind[controlTop] = instruction & 0xffff;
-                    controlStart[controlTop] = pc;
-                    controlEnd[controlTop] = operand;
-                    controlBase[controlTop] = ifControlBase;
-                    controlParameters[controlTop] = ifParameterCount;
-                    controlResults[controlTop] = instruction >>> 24;
-                    controlTop++;
+                    int ifEntryFrame = controlTop;
+                    controlWord[ifEntryFrame] = instruction;
+                    controlStart[ifEntryFrame] = pc;
+                    controlEnd[ifEntryFrame] = operand;
+                    controlBase[ifEntryFrame] = ifControlBase;
+                    controlTop = ifEntryFrame + 1;
                     if (condition != 0) {
                         pc++;
                     } else if (auxiliary >= 0) {
@@ -671,7 +675,7 @@ public final class WasmInterpreter {
                         throw new WasmTrap("control stack underflow");
                     }
                     int elseExitFrame = controlTop - 1;
-                    transfer(controlResults[elseExitFrame], controlBase[elseExitFrame]);
+                    transfer(controlWord[elseExitFrame] >>> 24, controlBase[elseExitFrame]);
                     controlTop = elseExitFrame;
                     pc = operand + 1;
                     break;
@@ -685,7 +689,7 @@ public final class WasmInterpreter {
                         throw new WasmTrap("control stack underflow");
                     }
                     int endExitFrame = controlTop - 1;
-                    transfer(controlResults[endExitFrame], controlBase[endExitFrame]);
+                    transfer(controlWord[endExitFrame] >>> 24, controlBase[endExitFrame]);
                     controlTop = endExitFrame;
                     pc++;
                     break;
@@ -725,12 +729,13 @@ public final class WasmInterpreter {
                         if (operand >= 0 && operand < inlineBranchAvailable) {
                             int inlineBranchTarget =
                                     controlTop - 1 - operand;
+                            int inlineBranchWord =
+                                    controlWord[inlineBranchTarget];
                             boolean inlineBranchLoop =
-                                    controlKind[inlineBranchTarget]
-                                            == WasmModule.LOOP;
+                                    (inlineBranchWord & 0xffff) == WasmModule.LOOP;
                             int inlineBranchArity = inlineBranchLoop
-                                    ? controlParameters[inlineBranchTarget]
-                                    : controlResults[inlineBranchTarget];
+                                    ? (inlineBranchWord >>> 16) & 0xff
+                                    : inlineBranchWord >>> 24;
                             int inlineBranchDestination =
                                     controlBase[inlineBranchTarget];
                             if (inlineBranchArity <= 1
@@ -809,12 +814,13 @@ public final class WasmInterpreter {
                             if (operand >= 0 && operand < inlineTakenAvailable) {
                                 int inlineTakenTarget =
                                         controlTop - 1 - operand;
+                                int inlineTakenWord =
+                                        controlWord[inlineTakenTarget];
                                 boolean inlineTakenLoop =
-                                        controlKind[inlineTakenTarget]
-                                            == WasmModule.LOOP;
+                                        (inlineTakenWord & 0xffff) == WasmModule.LOOP;
                                 int inlineTakenArity = inlineTakenLoop
-                                        ? controlParameters[inlineTakenTarget]
-                                        : controlResults[inlineTakenTarget];
+                                        ? (inlineTakenWord >>> 16) & 0xff
+                                        : inlineTakenWord >>> 24;
                                 int inlineTakenDestination =
                                         controlBase[inlineTakenTarget];
                                 if (inlineTakenArity <= 1
@@ -3631,10 +3637,11 @@ public final class WasmInterpreter {
                 throw new WasmTrap("branch depth is out of range");
             }
             int target = controlTop - 1 - depth;
-            boolean loop = controlKind[target] == WasmModule.LOOP;
+            int targetWord = controlWord[target];
+            boolean loop = (targetWord & 0xffff) == WasmModule.LOOP;
             targetPc = loop ? controlStart[target] + 1 : controlEnd[target] + 1;
             destinationHeight = controlBase[target] - functionStackBase;
-            arity = loop ? controlParameters[target] : controlResults[target];
+            arity = loop ? (targetWord >>> 16) & 0xff : targetWord >>> 24;
             activeControlDepth =
                     loop
                             ? target + 1 - functionControlBase
@@ -3675,11 +3682,11 @@ public final class WasmInterpreter {
             throw new WasmTrap("branch depth is out of range");
         }
         int target = controlTop - 1 - depth;
-        int arity = controlKind[target] == WasmModule.LOOP
-                ? controlParameters[target]
-                : controlResults[target];
+        int word = controlWord[target];
+        boolean loop = (word & 0xffff) == WasmModule.LOOP;
+        int arity = loop ? (word >>> 16) & 0xff : word >>> 24;
         transfer(arity, controlBase[target]);
-        if (controlKind[target] == WasmModule.LOOP) {
+        if (loop) {
             controlTop = target + 1;
             return controlStart[target] + 1;
         }
@@ -4529,7 +4536,16 @@ public final class WasmInterpreter {
     }
 
     private void pushI32(int value) {
-        push(value);
+        try {
+            values[valueTop++] = value;
+            return;
+        } catch (ArrayIndexOutOfBoundsException failure) {
+            if (valueTop > values.length || valueTop == Integer.MIN_VALUE) {
+                valueTop--;
+                throw new WasmTrap("value stack exhausted");
+            }
+            throw failure;
+        }
     }
 
     private void push(long value) {
@@ -4553,7 +4569,10 @@ public final class WasmInterpreter {
     }
 
     private int popI32() {
-        return (int) pop();
+        if (valueTop <= 0) {
+            throw new WasmTrap("value stack underflow");
+        }
+        return (int) values[--valueTop];
     }
 
     private long peek() {

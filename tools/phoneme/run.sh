@@ -24,9 +24,10 @@ cmd_bench() {
     #                                      branch-direct-all|branch-direct-vs-inline-all]
     #                         [--reps N] [--extra-frames N] [--heap-capacity 64M]
     #
-    # Without --extra-frames, recorded game routes use a 60-frame tail while
-    # Game of Life uses its canonical single-frame route. The explicit option
-    # still overrides every selected cartridge.
+    # Without --extra-frames, recorded game routes use a 60-frame tail, Duck
+    # Maze completes its canonical 155-frame level-one route, and Game of Life
+    # uses its canonical single-frame route. The explicit option still
+    # overrides every selected cartridge.
 
     PHONEME_HOME="${PHONEME_HOME:-${ROOT_DIR}/.local/phoneme}"
     CLDC_VM="${PHONEME_HOME}/cldc_vm_r"
@@ -91,10 +92,18 @@ cmd_bench() {
     route_extra_frames() {
         if [ -n "${EXTRA_FRAMES}" ]; then
             printf '%s\n' "${EXTRA_FRAMES}"
-        elif [ "$1" = "game-of-life-zig-edition" ]; then
-            printf '1\n'
         else
-            printf '60\n'
+            case "$1" in
+            duck-maze)
+                printf '48\n'
+                ;;
+            game-of-life-zig-edition)
+                printf '1\n'
+                ;;
+            *)
+                printf '60\n'
+                ;;
+            esac
         fi
     }
     if [ "${MODE}" = "all" ]; then

@@ -19,11 +19,17 @@ public final class RuntimeBenchmark {
                     "usage: font.bin mandelbrot.wasm duck-maze.wasm plasma-cube.wasm");
         }
         byte[] font = readFile(arguments[0]);
-        benchmark("mandelbrot", font, readFile(arguments[1]), true, true, true, true, true);
-        benchmark("duck-maze", font, readFile(arguments[2]), true, true, true, true, true);
+        benchmark(
+                "mandelbrot", font, readFile(arguments[1]),
+                true, true, true, true, true, false);
+        benchmark(
+                "duck-maze-gameplay", font, readFile(arguments[2]),
+                true, true, true, true, true, true);
         byte[] plasma = readFile(arguments[3]);
-        benchmark("plasma-cube", font, plasma, true, true, true, true, true);
-        benchmark("plasma-cube-generic", font, plasma, false, true, true, true, true);
+        benchmark("plasma-cube", font, plasma, true, true, true, true, true, false);
+        benchmark(
+                "plasma-cube-generic", font, plasma,
+                false, true, true, true, true, false);
         benchmark(
                 "plasma-cube-generic-direct-intrinsics-off",
                 font,
@@ -32,6 +38,7 @@ public final class RuntimeBenchmark {
                 true,
                 true,
                 true,
+                false,
                 false);
         benchmark(
                 "plasma-cube-generic-trace-off",
@@ -41,7 +48,8 @@ public final class RuntimeBenchmark {
                 true,
                 true,
                 false,
-                true);
+                true,
+                false);
         benchmark(
                 "plasma-cube-generic-fusion-only",
                 font,
@@ -50,7 +58,8 @@ public final class RuntimeBenchmark {
                 true,
                 false,
                 true,
-                true);
+                true,
+                false);
         benchmark(
                 "plasma-cube-generic-baseline",
                 font,
@@ -59,6 +68,7 @@ public final class RuntimeBenchmark {
                 false,
                 false,
                 true,
+                false,
                 false);
     }
 
@@ -70,7 +80,8 @@ public final class RuntimeBenchmark {
             boolean extendedFusionsEnabled,
             boolean compactExecutorEnabled,
             boolean traceExecutorEnabled,
-            boolean directNumericIntrinsicsEnabled)
+            boolean directNumericIntrinsicsEnabled,
+            boolean duckGameplay)
             throws Exception {
         long parseStarted = System.nanoTime();
         WasmModule module = WasmModule.read(cartridge, null, extendedFusionsEnabled);
@@ -85,9 +96,21 @@ public final class RuntimeBenchmark {
         interpreter.setInstructionLimit(200000000L);
         interpreter.invokeCartridgeLifecycle();
 
+        int gamepad = 0;
+        if (duckGameplay) {
+            update(module, runtime, interpreter, 0);
+            update(module, runtime, interpreter, 1);
+            update(module, runtime, interpreter, 0);
+            updates(module, runtime, interpreter, 128, 32);
+            updates(module, runtime, interpreter, 32, 24);
+            updates(module, runtime, interpreter, 128, 16);
+            updates(module, runtime, interpreter, 32, 32);
+            gamepad = 64;
+        }
+
         int index;
         for (index = 0; index < WARMUP_FRAMES; index++) {
-            update(module, runtime, interpreter);
+            update(module, runtime, interpreter, gamepad);
         }
 
         long totalNanos = 0;
@@ -102,7 +125,7 @@ public final class RuntimeBenchmark {
         long traceIterations = 0;
         for (index = 0; index < SAMPLE_FRAMES; index++) {
             long started = System.nanoTime();
-            update(module, runtime, interpreter);
+            update(module, runtime, interpreter, gamepad);
             long elapsed = System.nanoTime() - started;
             totalNanos += elapsed;
             if (elapsed < minimumNanos) {
@@ -128,7 +151,7 @@ public final class RuntimeBenchmark {
         long renderNanos = System.nanoTime() - renderStarted;
 
         interpreter.setProfilingEnabled(true);
-        update(module, runtime, interpreter);
+        update(module, runtime, interpreter, gamepad);
 
         System.out.println(
                 "BENCH cart="
@@ -168,9 +191,24 @@ public final class RuntimeBenchmark {
         printFunctionFingerprints(module);
     }
 
+    private static void updates(
+            WasmModule module,
+            Wasm4Runtime runtime,
+            WasmInterpreter interpreter,
+            int gamepad,
+            int count) throws Exception {
+        int index;
+        for (index = 0; index < count; index++) {
+            update(module, runtime, interpreter, gamepad);
+        }
+    }
+
     private static void update(
-            WasmModule module, Wasm4Runtime runtime, WasmInterpreter interpreter) throws Exception {
-        runtime.beginFrame(module, 0, 0, 0, 0);
+            WasmModule module,
+            Wasm4Runtime runtime,
+            WasmInterpreter interpreter,
+            int gamepad) throws Exception {
+        runtime.beginFrame(module, gamepad, 0, 0, 0);
         interpreter.invoke("update");
         runtime.endFrame();
     }
