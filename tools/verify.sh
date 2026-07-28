@@ -148,8 +148,8 @@ cmd_jar() {
             metadata="$(cat -- "${metadata_file}")"
         fi
         if ! printf '%s\n' "${metadata}" |
-            grep -q '^MIDlet-Version: 1\.0\.2$'; then
-            printf 'error: %s does not declare MIDlet-Version 1.0.2\n' \
+            grep -q '^MIDlet-Version: 1\.0\.3$'; then
+            printf 'error: %s does not declare MIDlet-Version 1.0.3\n' \
                 "${metadata_file}" >&2
             exit 1
         fi

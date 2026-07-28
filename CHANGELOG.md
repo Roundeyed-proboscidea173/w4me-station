@@ -1,5 +1,44 @@
 # Changelog
 
+## 1.0.3 — 2026-07-29
+
+This release improves the universal interpreter, corrects unsigned `i64`
+conversion rounding, and strengthens performance verification without changing
+the cartridge format, controls, storage, or installation requirements.
+
+### Interpreter
+
+- keeps the instruction counter local on the main dispatch path;
+- reads auxiliary W4IR operands only for instructions that need them;
+- correctly rounds `f32.convert_i64_u` and `f64.convert_i64_u` for
+  rounding-sensitive unsigned values above `2^63`.
+
+### Performance
+
+The corrected route harness was applied identically to `v1.0.2@33a6632` and the
+1.0.3 interpreter. Twelve balanced native i686 phoneME pairs per workload
+measured median headless frame-time reductions of 5.910% in Waternet, 4.961% in
+Rubido, 6.275% in Untangle, 6.418% in Game of Life, and 3.728% on the Duck Maze
+level-one route. All 60 pairs favored 1.0.3 and matched exact instruction
+counts, oracle checkpoints, and final framebuffer hashes.
+
+These measurements use a CLDC 1.1 C interpreter without a JIT. They exclude
+MIDP presentation and audio latency and are not physical-device FPS figures.
+
+### Verification
+
+- separates native phoneME timing from exact replay validation and rejects
+  unverified idle routes by default;
+- adds the frozen W4Bench v1 suite with seven deterministic workload families;
+- dynamically reaches all 190 supported source-WebAssembly opcodes on the host,
+  verifies the single expected `unreachable` trap, and rejects internal W4IR
+  opcode leakage;
+- checks workload results and unsigned-`i64` conversion sentinels against an
+  independent Python oracle and rejects deliberately corrupted result records.
+
+W4Bench timings are diagnostic interpreter measurements, not a replacement for
+paired real-cartridge A/B evidence.
+
 ## 1.0.2 — 2026-07-28
 
 This release further reduces universal interpreter overhead without changing
