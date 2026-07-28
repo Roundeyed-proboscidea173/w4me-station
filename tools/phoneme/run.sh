@@ -9,7 +9,7 @@ cmd_bench() {
     # at compile time), preverifies it, and replays the recorded browser-oracle
     # routes on the local phoneME cldc_vm_r — a 32-bit, JIT-less C-interpreter
     # CLDC VM. Every oracle checkpoint (framebuffer FNV-1a, palette, input state)
-    # is verified during the timed run.
+    # is verified by a separate replay after the timed interval.
     #
     # This script intentionally does NOT source tools/container/env.sh: the local VM is
     # a host i686 binary and runs directly. Requirements: javac 8+ on PATH
@@ -23,11 +23,11 @@ cmd_bench() {
     #                                      load-tee-all|branch-inline-all|
     #                                      branch-direct-all|branch-direct-vs-inline-all]
     #                         [--reps N] [--extra-frames N] [--heap-capacity 64M]
+    #                         [--unverified-idle]
     #
-    # Without --extra-frames, recorded game routes use a 60-frame tail, Duck
-    # Maze completes its canonical 155-frame level-one route, and Game of Life
-    # uses its canonical single-frame route. The explicit option still
-    # overrides every selected cartridge.
+    # Without --extra-frames, recorded routes stop on their final oracle
+    # checkpoint. Duck Maze holds its last input through frame 154. Unknown
+    # cartridges require the explicit --unverified-idle escape hatch.
 
     PHONEME_HOME="${PHONEME_HOME:-${ROOT_DIR}/.local/phoneme}"
     CLDC_VM="${PHONEME_HOME}/cldc_vm_r"
@@ -54,10 +54,11 @@ cmd_bench() {
 
     CARTS=()
     MODE="optimized"
-    CANDIDATE="host-import-id"
+    CANDIDATE="counterless"
     REPS=""
     EXTRA_FRAMES=""
     HEAP_CAPACITY="64M"
+    ALLOW_UNVERIFIED_IDLE="no"
     while [ $# -gt 0 ]; do
         case "$1" in
         --mode)
@@ -80,6 +81,10 @@ cmd_bench() {
             HEAP_CAPACITY="$2"
             shift 2
             ;;
+        --unverified-idle)
+            ALLOW_UNVERIFIED_IDLE="yes"
+            shift
+            ;;
         *)
             CARTS+=("$1")
             shift
@@ -87,7 +92,7 @@ cmd_bench() {
         esac
     done
     if [ "${#CARTS[@]}" -eq 0 ]; then
-        CARTS=(waternet rubido untangle game-of-life-zig-edition)
+        CARTS=(waternet rubido untangle game-of-life-zig-edition duck-maze)
     fi
     route_extra_frames() {
         if [ -n "${EXTRA_FRAMES}" ]; then
@@ -97,7 +102,7 @@ cmd_bench() {
             duck-maze)
                 printf '48\n'
                 ;;
-            game-of-life-zig-edition)
+            waternet | rubido | untangle | game-of-life-zig-edition)
                 printf '1\n'
                 ;;
             *)
@@ -201,6 +206,12 @@ cmd_bench() {
             "${EXTRA_FRAMES}" >&2
         exit 1
     fi
+    if [ -n "${EXTRA_FRAMES}" ] &&
+        [ "${ALLOW_UNVERIFIED_IDLE}" != "yes" ]; then
+        printf 'error: --extra-frames extends beyond the recorded route\n' >&2
+        printf 'hint: add --unverified-idle to mark the result as diagnostic\n' >&2
+        exit 1
+    fi
     case "${HEAP_CAPACITY}" in
     '' | [!0-9]* | *[!0-9KMGkmg]* | *[KMGkmg][0-9KMGkmg]*)
         printf 'error: heap capacity must be an integer with optional K, M, or G suffix: %s\n' \
@@ -208,6 +219,30 @@ cmd_bench() {
         exit 1
         ;;
     esac
+    ROUTE_VERIFICATION="verified"
+    if [ "${ALLOW_UNVERIFIED_IDLE}" = "yes" ]; then
+        ROUTE_VERIFICATION="unverified-idle"
+    fi
+    for cart in "${CARTS[@]}"; do
+        [ -f "${ROOT_DIR}/cartridges/${cart}.wasm" ] || {
+            printf 'error: missing cartridge: %s\n' "${cart}" >&2
+            exit 1
+        }
+        if [ "${ROUTE_VERIFICATION}" = "verified" ]; then
+            for route_file in input.csv oracle.csv; do
+                route_path="${ROOT_DIR}/testdata/oracles/${cart}/${route_file}"
+                if [ ! -s "${route_path}" ] ||
+                    ! awk 'NR > 1 && NF { found=1; exit } END { exit !found }' \
+                        "${route_path}"; then
+                    printf 'error: verified benchmark requires a non-empty %s for %s\n' \
+                        "${route_file}" "${cart}" >&2
+                    printf 'hint: use --unverified-idle only for an intentional diagnostic idle run\n' \
+                        >&2
+                    exit 1
+                fi
+            done
+        fi
+    done
     if [ -n "${PAIR_BASELINE}" ] && [ $((REPS % 2)) -ne 0 ]; then
         printf 'error: paired comparisons require an even rep count: %s\n' \
             "${REPS}" >&2
@@ -556,6 +591,14 @@ cmd_bench() {
         fi
     }
 
+    if [ "${#CANDIDATES[@]}" -eq 1 ]; then
+        EXECUTED_ARTIFACT_SHA256="$(
+            candidate_artifact_sha256 "${CANDIDATES[0]}"
+        )"
+    else
+        EXECUTED_ARTIFACT_SHA256="multiple"
+    fi
+
     SOURCE_HEAD="$(git -C "${ROOT_DIR}" rev-parse HEAD 2>/dev/null || printf 'unversioned')"
     if [ -z "$(git -C "${ROOT_DIR}" status --porcelain --untracked-files=normal)" ]; then
         SOURCE_DIRTY="no"
@@ -569,13 +612,14 @@ cmd_bench() {
             "$(sha256sum "${CLDC_VM}" | cut -d ' ' -f 1)"
         printf 'classes-sha256=%s\n' "$(sha256sum "${CLDC_CLASSES}" | cut -d ' ' -f 1)"
         printf 'preverify-sha256=%s\n' "$(sha256sum "${PREVERIFY}" | cut -d ' ' -f 1)"
-        printf 'artifact-sha256=%s\n' "${BASE_ARTIFACT_SHA256}"
+        printf 'artifact-sha256=%s\n' "${EXECUTED_ARTIFACT_SHA256}"
+        printf 'base-artifact-sha256=%s\n' "${BASE_ARTIFACT_SHA256}"
         printf 'source-head=%s source-dirty=%s\n' "${SOURCE_HEAD}" "${SOURCE_DIRTY}"
         printf 'cldc-api-lint=pass source=1.3 target=1.3 fast-paths=off\n'
         printf 'timer=System.currentTimeMillis paired-statistic=median-paired-effect paired-acceptance-reps=8\n'
-        printf 'reps=%s extra-frames=%s heap-capacity=%s modes=%s candidates=%s\n' \
+        printf 'reps=%s extra-frames=%s heap-capacity=%s verification=%s modes=%s candidates=%s\n' \
             "${REPS}" "${EXTRA_FRAMES:-per-route}" "${HEAP_CAPACITY}" \
-            "${MODES[*]}" "${CANDIDATES[*]}"
+            "${ROUTE_VERIFICATION}" "${MODES[*]}" "${CANDIDATES[*]}"
         for candidate in "${CANDIDATES[@]}"; do
             printf 'artifact candidate=%s diagnostic-counters=%s resident-fast-path=%s dense-opcode-dispatch=%s load-tee-fusions=%s inline-branch-fast-path=%s direct-branch-fast-path=%s sha256=%s\n' \
                 "${candidate}" \
@@ -623,6 +667,7 @@ cmd_bench() {
                         -classpath "${CLDC_CLASSES}:${RUN_PREVERIFIED}" \
                         w4me.PhoneMeRouteBench "${cart}" "${mode}" \
                         "${CART_EXTRA_FRAMES}" 1 "${candidate}" "${sample}" \
+                        "${ROUTE_VERIFICATION}" \
                         >"${RESULT}" 2>&1; then
                         PASS_COUNT="$(grep -c 'phoneme-bench:pass' "${RESULT}" || true)"
                         if [ "${PASS_COUNT}" -ne 1 ]; then
@@ -705,10 +750,51 @@ cmd_bench() {
                         printf '%s\n' "${CANDIDATE_PASS}" |
                             sed -n 's/.* frames=\([0-9][0-9]*\).*/\1/p'
                     )"
+                    BASELINE_CHECKPOINTS="$(
+                        printf '%s\n' "${BASELINE_PASS}" |
+                            sed -n 's/.* checkpoints=\([0-9][0-9]*\).*/\1/p'
+                    )"
+                    CANDIDATE_CHECKPOINTS="$(
+                        printf '%s\n' "${CANDIDATE_PASS}" |
+                            sed -n 's/.* checkpoints=\([0-9][0-9]*\).*/\1/p'
+                    )"
+                    BASELINE_INSTRUCTIONS="$(
+                        printf '%s\n' "${BASELINE_PASS}" |
+                            sed -n 's/.* instructions=\([0-9][0-9]*\).*/\1/p'
+                    )"
+                    CANDIDATE_INSTRUCTIONS="$(
+                        printf '%s\n' "${CANDIDATE_PASS}" |
+                            sed -n 's/.* instructions=\([0-9][0-9]*\).*/\1/p'
+                    )"
+                    BASELINE_FRAMEBUFFER="$(
+                        printf '%s\n' "${BASELINE_PASS}" |
+                            sed -n 's/.* final-framebuffer-fnv1a=\([0-9a-f][0-9a-f]*\).*/\1/p'
+                    )"
+                    CANDIDATE_FRAMEBUFFER="$(
+                        printf '%s\n' "${CANDIDATE_PASS}" |
+                            sed -n 's/.* final-framebuffer-fnv1a=\([0-9a-f][0-9a-f]*\).*/\1/p'
+                    )"
+                    BASELINE_VERIFICATION="$(
+                        printf '%s\n' "${BASELINE_PASS}" |
+                            sed -n 's/.* verification=\([^ ]*\).*/\1/p'
+                    )"
+                    CANDIDATE_VERIFICATION="$(
+                        printf '%s\n' "${CANDIDATE_PASS}" |
+                            sed -n 's/.* verification=\([^ ]*\).*/\1/p'
+                    )"
                     if [ -z "${BASELINE_US}" ] || [ -z "${CANDIDATE_US}" ] ||
                         [ -z "${BASELINE_FRAMES}" ] ||
-                        [ "${BASELINE_FRAMES}" != "${CANDIDATE_FRAMES}" ]; then
-                        printf 'FAIL %s %s incomplete-pair sample=%s\n' \
+                        [ -z "${BASELINE_CHECKPOINTS}" ] ||
+                        [ -z "${BASELINE_INSTRUCTIONS}" ] ||
+                        [ -z "${BASELINE_FRAMEBUFFER}" ] ||
+                        [ "${BASELINE_FRAMES}" != "${CANDIDATE_FRAMES}" ] ||
+                        [ "${BASELINE_CHECKPOINTS}" != "${CANDIDATE_CHECKPOINTS}" ] ||
+                        [ "${BASELINE_INSTRUCTIONS}" != "${CANDIDATE_INSTRUCTIONS}" ] ||
+                        [ "${BASELINE_FRAMEBUFFER}" != "${CANDIDATE_FRAMEBUFFER}" ] ||
+                        [ "${BASELINE_VERIFICATION}" != "${CANDIDATE_VERIFICATION}" ] ||
+                        { [ "${ROUTE_VERIFICATION}" = "verified" ] &&
+                            [ "${BASELINE_CHECKPOINTS}" -le 0 ]; }; then
+                        printf 'FAIL %s %s incomplete-or-inexact-pair sample=%s\n' \
                             "${cart}" "${mode}" "${sample}" | tee -a "${RECEIPT}"
                         status=1
                         sample=$((sample + 1))
@@ -755,6 +841,287 @@ cmd_bench() {
     exit "${status}"
 }
 
+prepare_phoneme_component() {
+    COMPONENT_OUT_DIR="$1"
+    COMPONENT_SOURCE="$2"
+    PHONEME_HOME="${PHONEME_HOME:-${ROOT_DIR}/.local/phoneme}"
+    COMPONENT_VM="${PHONEME_HOME}/cldc_vm_r"
+    COMPONENT_PREVERIFY="${PHONEME_HOME}/preverify"
+    COMPONENT_CLASSES="${PHONEME_HOME}/classes.zip"
+
+    command -v javac >/dev/null || {
+        printf 'error: javac not found on PATH\n' >&2
+        exit 1
+    }
+    [ -x "${COMPONENT_VM}" ] || {
+        printf 'error: missing executable %s\n' "${COMPONENT_VM}" >&2
+        exit 1
+    }
+    [ -x "${COMPONENT_PREVERIFY}" ] || {
+        printf 'error: missing executable %s\n' "${COMPONENT_PREVERIFY}" >&2
+        exit 1
+    }
+    [ -f "${COMPONENT_CLASSES}" ] || {
+        printf 'error: missing phoneME classes: %s\n' "${COMPONENT_CLASSES}" >&2
+        exit 1
+    }
+
+    rm -rf -- "${COMPONENT_OUT_DIR}"
+    mkdir -p -- \
+        "${COMPONENT_OUT_DIR}/classes" \
+        "${COMPONENT_OUT_DIR}/preverified"
+    find "${ROOT_DIR}/src/main/java/w4me/wasm" \
+        "${ROOT_DIR}/src/main/java/w4me/runtime" \
+        -name '*.java' \
+        ! -path "${ROOT_DIR}/src/main/java/w4me/wasm/InterpreterBuildConfig.java" \
+        -print | sort |
+        xargs grep -L -E 'javax\.microedition|RmsW4IrStore|RmsDiskBackend' \
+            >"${COMPONENT_OUT_DIR}/sources.list"
+    {
+        printf '%s\n' \
+            "${ROOT_DIR}/bench/configs/timed/java/w4me/wasm/InterpreterBuildConfig.java"
+        printf '%s\n' "${COMPONENT_SOURCE}"
+    } >>"${COMPONENT_OUT_DIR}/sources.list"
+    javac \
+        -nowarn \
+        -encoding UTF-8 \
+        -source 1.3 \
+        -target 1.3 \
+        -Xlint:-options \
+        -bootclasspath "${COMPONENT_CLASSES}" \
+        -d "${COMPONENT_OUT_DIR}/classes" \
+        @"${COMPONENT_OUT_DIR}/sources.list"
+    "${COMPONENT_PREVERIFY}" \
+        -classpath "${COMPONENT_CLASSES}" \
+        -d "${COMPONENT_OUT_DIR}/preverified" \
+        "${COMPONENT_OUT_DIR}/classes"
+    cp -- \
+        "${ROOT_DIR}/src/main/resources/w4font.bin" \
+        "${ROOT_DIR}/cartridges/waternet.wasm" \
+        "${COMPONENT_OUT_DIR}/preverified/"
+
+    COMPONENT_ARTIFACT_SHA256="$(
+        cd -- "${COMPONENT_OUT_DIR}/preverified"
+        find . -type f -print0 | sort -z | xargs -0 sha256sum |
+            sha256sum | cut -d ' ' -f 1
+    )"
+}
+
+component_median() {
+    sort -n -- "$1" |
+        awk '{ value[NR] = $1 } END { \
+            if (NR % 2 == 1) print value[(NR + 1) / 2]; \
+            else printf "%.1f\n", (value[NR / 2] + value[NR / 2 + 1]) / 2.0; \
+        }'
+}
+
+write_component_header() {
+    local receipt="$1"
+    local component="$2"
+    local parameters="$3"
+    local source_head
+    local source_dirty
+    source_head="$(git -C "${ROOT_DIR}" rev-parse HEAD 2>/dev/null || printf 'unversioned')"
+    if [ -z "$(git -C "${ROOT_DIR}" status --porcelain --untracked-files=normal)" ]; then
+        source_dirty="no"
+    else
+        source_dirty="yes"
+    fi
+    {
+        printf 'phoneme-component-bench receipt\n'
+        printf 'component=%s %s\n' "${component}" "${parameters}"
+        printf 'vm-arch=i686 vm-sha256=%s\n' \
+            "$(sha256sum -- "${COMPONENT_VM}" | cut -d ' ' -f 1)"
+        printf 'classes-sha256=%s\n' \
+            "$(sha256sum -- "${COMPONENT_CLASSES}" | cut -d ' ' -f 1)"
+        printf 'preverify-sha256=%s\n' \
+            "$(sha256sum -- "${COMPONENT_PREVERIFY}" | cut -d ' ' -f 1)"
+        printf 'artifact-sha256=%s\n' "${COMPONENT_ARTIFACT_SHA256}"
+        printf 'source-head=%s source-dirty=%s\n' "${source_head}" "${source_dirty}"
+        printf 'cldc-api-lint=pass source=1.3 target=1.3 production-config=counterless\n'
+    } >"${receipt}"
+}
+
+cmd_bench_pcm() {
+    local workload="waternet"
+    local cycles=20
+    local reps=5
+    local heap_capacity="64M"
+    if [ $# -gt 0 ] && [[ "$1" != --* ]]; then
+        workload="$1"
+        shift
+    fi
+    while [ $# -gt 0 ]; do
+        case "$1" in
+        --cycles)
+            cycles="$2"
+            shift 2
+            ;;
+        --reps)
+            reps="$2"
+            shift 2
+            ;;
+        --heap-capacity)
+            heap_capacity="$2"
+            shift 2
+            ;;
+        *)
+            printf 'error: unknown bench-pcm option: %s\n' "$1" >&2
+            exit 2
+            ;;
+        esac
+    done
+    case "${workload}" in
+    waternet | rubido | slide | adsr) ;;
+    *)
+        printf 'error: PCM workload must be waternet, rubido, slide, or adsr\n' >&2
+        exit 2
+        ;;
+    esac
+    if ! [[ "${cycles}" =~ ^[1-9][0-9]*$ && "${reps}" =~ ^[1-9][0-9]*$ ]]; then
+        printf 'error: cycles and reps must be positive integers\n' >&2
+        exit 2
+    fi
+
+    local out_dir="${ROOT_DIR}/build/reports/phoneme-pcm"
+    local receipt="${out_dir}/receipt.txt"
+    prepare_phoneme_component \
+        "${out_dir}" \
+        "${ROOT_DIR}/src/test/java/w4me/PhoneMePcmBench.java"
+    write_component_header \
+        "${receipt}" pcm \
+        "workload=${workload} cycles=${cycles} reps=${reps} heap-capacity=${heap_capacity}"
+    : >"${out_dir}/metrics.txt"
+    local expected_hash=""
+    local sample=0
+    while [ "${sample}" -lt "${reps}" ]; do
+        local result="${out_dir}/sample-${sample}.txt"
+        "${COMPONENT_VM}" -EnableTicks "=HeapCapacity${heap_capacity}" \
+            -classpath "${COMPONENT_CLASSES}:${out_dir}/preverified" \
+            w4me.PhoneMePcmBench "${workload}" "${cycles}" "${sample}" \
+            >"${result}" 2>&1
+        local pass_line
+        pass_line="$(grep -F -- 'pcm-bench:pass ' "${result}")"
+        local output_hash
+        output_hash="$(
+            printf '%s\n' "${pass_line}" |
+                sed -n 's/.* output-fnv1a=\([0-9a-f][0-9a-f]*\).*/\1/p'
+        )"
+        local metric
+        metric="$(
+            printf '%s\n' "${pass_line}" |
+                sed -n 's/.* us-per-sequence=\([0-9][0-9]*\).*/\1/p'
+        )"
+        if [ -z "${output_hash}" ] || [ -z "${metric}" ]; then
+            printf 'error: incomplete PCM sample %s\n' "${sample}" >&2
+            exit 1
+        fi
+        if [ -n "${expected_hash}" ] && [ "${output_hash}" != "${expected_hash}" ]; then
+            printf 'error: PCM output changed at sample %s\n' "${sample}" >&2
+            exit 1
+        fi
+        expected_hash="${output_hash}"
+        printf '%s\n' "${metric}" >>"${out_dir}/metrics.txt"
+        printf '%s\n' "${pass_line}" | tee -a "${receipt}"
+        sample=$((sample + 1))
+    done
+    printf 'phoneme-component-bench:median component=pcm reps=%s us-per-sequence=%s output-fnv1a=%s\n' \
+        "${reps}" "$(component_median "${out_dir}/metrics.txt")" "${expected_hash}" |
+        tee -a "${receipt}"
+    printf 'receipt: %s\n' "${receipt}"
+}
+
+cmd_bench_argb() {
+    local side=160
+    local band_height=16
+    local frames=100
+    local reps=5
+    local heap_capacity="64M"
+    while [ $# -gt 0 ]; do
+        case "$1" in
+        --side)
+            side="$2"
+            shift 2
+            ;;
+        --band-height)
+            band_height="$2"
+            shift 2
+            ;;
+        --frames)
+            frames="$2"
+            shift 2
+            ;;
+        --reps)
+            reps="$2"
+            shift 2
+            ;;
+        --heap-capacity)
+            heap_capacity="$2"
+            shift 2
+            ;;
+        *)
+            printf 'error: unknown bench-argb option: %s\n' "$1" >&2
+            exit 2
+            ;;
+        esac
+    done
+    if ! [[ "${side}" =~ ^[1-9][0-9]*$ &&
+        "${band_height}" =~ ^[1-9][0-9]*$ &&
+        "${frames}" =~ ^[1-9][0-9]*$ &&
+        "${reps}" =~ ^[1-9][0-9]*$ ]]; then
+        printf 'error: side, band-height, frames, and reps must be positive integers\n' >&2
+        exit 2
+    fi
+
+    local out_dir="${ROOT_DIR}/build/reports/phoneme-argb"
+    local receipt="${out_dir}/receipt.txt"
+    prepare_phoneme_component \
+        "${out_dir}" \
+        "${ROOT_DIR}/src/test/java/w4me/PhoneMeArgbBandBench.java"
+    write_component_header \
+        "${receipt}" argb \
+        "side=${side} band-height=${band_height} frames=${frames} reps=${reps} heap-capacity=${heap_capacity}"
+    : >"${out_dir}/metrics.txt"
+    local expected_hash=""
+    local sample=0
+    while [ "${sample}" -lt "${reps}" ]; do
+        local result="${out_dir}/sample-${sample}.txt"
+        "${COMPONENT_VM}" -EnableTicks "=HeapCapacity${heap_capacity}" \
+            -classpath "${COMPONENT_CLASSES}:${out_dir}/preverified" \
+            w4me.PhoneMeArgbBandBench \
+            "${side}" "${band_height}" "${frames}" "${sample}" \
+            >"${result}" 2>&1
+        local pass_line
+        pass_line="$(grep -F -- 'argb-band:pass ' "${result}")"
+        local output_hash
+        output_hash="$(
+            printf '%s\n' "${pass_line}" |
+                sed -n 's/.* output-fnv1a=\([0-9a-f][0-9a-f]*\).*/\1/p'
+        )"
+        local metric
+        metric="$(
+            printf '%s\n' "${pass_line}" |
+                sed -n 's/.* us-per-frame=\([0-9][0-9]*\).*/\1/p'
+        )"
+        if [ -z "${output_hash}" ] || [ -z "${metric}" ]; then
+            printf 'error: incomplete ARGB sample %s\n' "${sample}" >&2
+            exit 1
+        fi
+        if [ -n "${expected_hash}" ] && [ "${output_hash}" != "${expected_hash}" ]; then
+            printf 'error: ARGB output changed at sample %s\n' "${sample}" >&2
+            exit 1
+        fi
+        expected_hash="${output_hash}"
+        printf '%s\n' "${metric}" >>"${out_dir}/metrics.txt"
+        printf '%s\n' "${pass_line}" | tee -a "${receipt}"
+        sample=$((sample + 1))
+    done
+    printf 'phoneme-component-bench:median component=argb reps=%s us-per-frame=%s output-fnv1a=%s\n' \
+        "${reps}" "$(component_median "${out_dir}/metrics.txt")" "${expected_hash}" |
+        tee -a "${receipt}"
+    printf 'receipt: %s\n' "${receipt}"
+}
+
 cmd_verify_arm64() {
     # Cross-ISA correctness gate for the phoneME portable-C interpreter.
     # Native i686 remains the performance judge. The AArch64 VM runs under QEMU
@@ -768,8 +1135,7 @@ cmd_verify_arm64() {
     ARM64_IMAGE="${PHONEME_ARM64_IMAGE:-docker.io/library/debian:stable-slim}"
     CANDIDATE="host-import-id"
     MODE="optimized"
-    EXTRA_FRAMES=60
-    CARTS=(waternet rubido untangle)
+    CARTS=(waternet rubido untangle duck-maze)
 
     command -v docker >/dev/null || {
         printf 'error: docker command not found on PATH\n' >&2
@@ -791,8 +1157,7 @@ cmd_verify_arm64() {
 
     # Build one CLDC-clean, preverified tree and collect the native reference run.
     "${ROOT_DIR}/tools/phoneme/run.sh" bench \
-        "${CARTS[@]}" --mode "${MODE}" --candidate "${CANDIDATE}" --reps 1 \
-        --extra-frames "${EXTRA_FRAMES}"
+        "${CARTS[@]}" --mode "${MODE}" --candidate "${CANDIDATE}" --reps 1
 
     RECEIPT="${OUT_DIR}/arm64-isa-receipt.txt"
     ARTIFACT_SHA256="$(sed -n 's/^artifact-sha256=//p' "${OUT_DIR}/receipt.txt")"
@@ -822,11 +1187,19 @@ cmd_verify_arm64() {
             "$(sha256sum -- "${ARM64_VM}" | cut -d ' ' -f 1)"
         printf 'candidate-execution=qemu-tcg timing-authoritative=no image=%s\n' \
             "${ARM64_IMAGE}"
-        printf 'mode=%s candidate=%s extra-frames=%s\n' \
-            "${MODE}" "${CANDIDATE}" "${EXTRA_FRAMES}"
+        printf 'mode=%s candidate=%s extra-frames=per-route\n' \
+            "${MODE}" "${CANDIDATE}"
     } >"${RECEIPT}"
 
     for cart in "${CARTS[@]}"; do
+        case "${cart}" in
+        duck-maze)
+            CART_EXTRA_FRAMES=48
+            ;;
+        *)
+            CART_EXTRA_FRAMES=1
+            ;;
+        esac
         I686_RESULT="${OUT_DIR}/${cart}-${MODE}-${CANDIDATE}-0.txt"
         ARM64_RESULT="${OUT_DIR}/${cart}-${MODE}-${CANDIDATE}-arm64-0.txt"
         I686_SIGNATURE="$(deterministic_signature "${I686_RESULT}")"
@@ -838,7 +1211,7 @@ cmd_verify_arm64() {
             /vp/cldc_vm_r-arm64 -EnableTicks =HeapCapacity64M \
             -classpath /vp/classes.zip:/pv \
             w4me.PhoneMeRouteBench "${cart}" "${MODE}" \
-            "${EXTRA_FRAMES}" 1 "${CANDIDATE}" 0 \
+            "${CART_EXTRA_FRAMES}" 1 "${CANDIDATE}" 0 verified \
             >"${ARM64_RESULT}" 2>&1; then
             printf 'FAIL phoneME arm64 cart=%s (VM exit)\n' "${cart}" >&2
             cat -- "${ARM64_RESULT}" >&2
@@ -869,16 +1242,27 @@ bench)
     shift
     cmd_bench "$@"
     ;;
+bench-pcm)
+    shift
+    cmd_bench_pcm "$@"
+    ;;
+bench-argb)
+    shift
+    cmd_bench_argb "$@"
+    ;;
 verify)
     shift
-    cmd_bench waternet rubido untangle game-of-life-zig-edition --reps 1 "$@"
+    cmd_bench waternet rubido untangle game-of-life-zig-edition duck-maze \
+        --reps 1 "$@"
     ;;
 verify-arm64)
     shift
     cmd_verify_arm64 "$@"
     ;;
 *)
-    printf '%s\n' 'usage: tools/phoneme/run.sh <bench|verify|verify-arm64> [args...]' >&2
+    printf '%s\n' \
+        'usage: tools/phoneme/run.sh <bench|bench-pcm|bench-argb|verify|verify-arm64> [args...]' \
+        >&2
     exit 1
     ;;
 esac

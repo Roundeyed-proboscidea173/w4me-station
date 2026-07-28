@@ -114,9 +114,9 @@ public final class PhoneMePcmBench {
                     "unknown workload: " + workload);
         }
 
-        int hash = FNV_OFFSET;
         long bytes = 0;
         int calls = 0;
+        int timedGuard = 0;
         long started = System.currentTimeMillis();
         int cycle;
         for (cycle = 0; cycle < cycles; cycle++) {
@@ -130,22 +130,21 @@ public final class PhoneMePcmBench {
                                 flags[index]);
                 calls++;
                 if (wav == null) {
-                    hash ^= 0xff;
-                    hash *= FNV_PRIME;
+                    timedGuard = timedGuard * 31 + 1;
                 } else {
                     bytes += wav.length;
-                    int byteIndex;
-                    for (byteIndex = 0;
-                            byteIndex < wav.length;
-                            byteIndex++) {
-                        hash ^= wav[byteIndex] & 0xff;
-                        hash *= FNV_PRIME;
-                    }
+                    timedGuard = timedGuard * 31 + wav.length;
                 }
             }
         }
         long elapsed = System.currentTimeMillis() - started;
-        sink = hash ^ (int) bytes ^ calls ^ sample;
+        int hash =
+                hashSequence(
+                        frequencies,
+                        durations,
+                        volumes,
+                        flags);
+        sink = hash ^ (int) bytes ^ calls ^ timedGuard ^ sample;
         System.out.println(
                 "pcm-bench:pass workload="
                         + workload
@@ -163,6 +162,36 @@ public final class PhoneMePcmBench {
                         + (elapsed * 1000L / cycles)
                         + " sink="
                         + sink);
+    }
+
+    private static int hashSequence(
+            int[] frequencies,
+            int[] durations,
+            int[] volumes,
+            int[] flags) {
+        int hash = FNV_OFFSET;
+        int index;
+        for (index = 0; index < frequencies.length; index++) {
+            byte[] wav =
+                    Wasm4Pcm.synthesize(
+                            frequencies[index],
+                            durations[index],
+                            volumes[index],
+                            flags[index]);
+            if (wav == null) {
+                hash ^= 0xff;
+                hash *= FNV_PRIME;
+            } else {
+                int byteIndex;
+                for (byteIndex = 0;
+                        byteIndex < wav.length;
+                        byteIndex++) {
+                    hash ^= wav[byteIndex] & 0xff;
+                    hash *= FNV_PRIME;
+                }
+            }
+        }
+        return hash;
     }
 
     private static String hex8(int value) {

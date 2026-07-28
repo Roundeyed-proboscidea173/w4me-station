@@ -3,7 +3,7 @@
 FROM registry.fedoraproject.org/fedora:44
 
 RUN dnf -y install --setopt=install_weak_deps=False \
-    binutils git-core findutils tar gzip zip unzip wabt \
+    binutils git-core findutils tar gzip zip unzip wabt procps-ng util-linux \
     python3 \
     just \
     ShellCheck shfmt \

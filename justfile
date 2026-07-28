@@ -35,6 +35,14 @@ run: build
 bench *args:
     ./tools/phoneme/run.sh bench {{ args }}
 
+# Benchmark production PCM synthesis on the native no-JIT phoneME reference VM.
+bench-pcm *args:
+    ./tools/phoneme/run.sh bench-pcm {{ args }}
+
+# Benchmark framebuffer-to-ARGB conversion on native no-JIT phoneME.
+bench-argb *args:
+    ./tools/phoneme/run.sh bench-argb {{ args }}
+
 # Re-run all release checks and write dist/SHA256SUMS.
 release:
     ./tools/release.sh

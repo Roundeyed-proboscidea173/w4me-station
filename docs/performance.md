@@ -44,6 +44,8 @@ just bench
 just bench --reps 5
 just bench rubido --mode optimized --reps 8
 just bench game-of-life-zig-edition --reps 8
+just bench-pcm waternet --cycles 20 --reps 5
+just bench-argb --side 160 --band-height 16 --frames 100 --reps 5
 tools/phoneme/run.sh verify
 tools/phoneme/run.sh verify-arm64
 ```
@@ -51,12 +53,22 @@ tools/phoneme/run.sh verify-arm64
 The benchmark compiles the interpreter and runtime with Java 1.3 settings
 against phoneME's CLDC `classes.zip`, preverifies the result, stages the
 cartridges and exact routes, and starts a fresh VM for every sample.
-The default corpus includes Waternet, Rubido, Untangle, and the
-integer/control-flow-heavy first generation of Game of Life. Recorded game
-routes retain a 60-frame tail; Game of Life deliberately uses one frame
-because that frame alone executes about 12.8 million WASM instructions.
-`--extra-frames` overrides this per-route default when a longer diagnostic run
-is intentional.
+Each verified sample first runs the timed route without oracle work, then
+replays it outside the timed interval to check every checkpoint, collect
+deterministic counters, and confirm that its final framebuffer matches the
+timed execution.
+The default artifact uses the same counterless compile-time configuration as
+the release JAR. The default corpus includes Waternet, Rubido, Untangle, Duck
+Maze, and the integer/control-flow-heavy first generation of Game of Life.
+Each route ends on its final recorded oracle checkpoint; Game of Life
+deliberately uses one frame because that frame alone executes about 12.8
+million WASM instructions.
+
+A cartridge without non-empty `input.csv` and `oracle.csv` is rejected.
+`--unverified-idle` is an explicit diagnostic escape hatch and its output is
+not performance evidence. An explicit `--extra-frames` extends the run beyond
+the recorded route and is therefore rejected unless `--unverified-idle` is
+also present.
 
 Generated artifacts and receipts are written to `build/reports/phoneme/`.
 
@@ -64,8 +76,12 @@ Generated artifacts and receipts are written to `build/reports/phoneme/`.
 
 - The native i686 `cldc_vm_r` is the only timing judge for interpreter changes.
 - Compare matching alternating pairs, not independent candidate medians.
-- Every route must preserve framebuffer, palette, input, disk, and deterministic
-  interpreter counters.
+- Every timed route must consume at least one exact framebuffer, palette, and
+  input checkpoint. Paired candidates must also agree on frame count, checkpoint
+  count, logical instruction count, and final framebuffer.
+- Full memory, globals, table, disk, tone, and trap equivalence belongs to the
+  deterministic differential and replay suites run by `just test`; the timed
+  phoneME route alone does not prove those states.
 - Small changes must clear timer resolution and run-to-run noise.
 - AArch64 counters and checkpoints must match i686 exactly, but AArch64 wall
   time is ignored.
@@ -132,3 +148,20 @@ tools/kemu/run.sh phone dist/w4me-station.jar
 ```
 
 KEmulator output is written below `build/reports/kemu/`.
+
+### What the diagnostic benchmarks prove
+
+| Command family | Valid conclusion | Invalid conclusion |
+| --- | --- | --- |
+| `tools/bench/run.sh corpus` | full-state equivalence and dynamic opcode/tier coverage | handset speed |
+| `tools/bench/run.sh untangle` / `fusions` | deterministic route behavior, dispatch counts, and profiling | no-JIT speedup |
+| KEmulator `generic-corpus` | the recorded route reaches the exact final framebuffer | phone performance |
+| KEmulator `generic-w4ir` | the requested fusion, compact, trace, and intrinsic tiers actually execute | phone performance |
+| KEmulator `untangle` | the long route stays exact and reports phase counters | phone performance |
+| KEmulator `w4ir` | RMS build, cached load, paging, and promotion execute | steady-state phone speed |
+| KEmulator `phone` / `plasma` | constrained MIDP presentation and pacing smoke | interpreter A/B evidence |
+| KEmulator `*-matrix` | repeated aggregation of the corresponding child scenario | stronger correctness than the child scenario |
+
+Only `tools/phoneme/run.sh bench` produces interpreter timing evidence. The
+PCM and ARGB commands isolate their named runtime components; they do not
+measure a complete rendered or audible frame.

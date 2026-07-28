@@ -41,6 +41,8 @@ just test        # deterministic host regression suite
 just verify      # test, build, JAR checks, counterless differential
 just run         # open the station in KEmulator
 just bench       # native phoneME corpus benchmark
+just bench-pcm   # native phoneME PCM synthesis benchmark
+just bench-argb  # native phoneME framebuffer conversion benchmark
 just release     # complete release gate and SHA256SUMS
 ```
 
@@ -51,7 +53,7 @@ subcommands rather than one script per scenario:
 tools/kemu/run.sh session <start|cmd|stop> [args...]
 tools/kemu/run.sh verify <scenario> [jar]
 tools/kemu/run.sh bench <scenario> [args...]
-tools/phoneme/run.sh <bench|verify|verify-arm64> [args...]
+tools/phoneme/run.sh <bench|bench-pcm|bench-argb|verify|verify-arm64> [args...]
 tools/bench/run.sh <untangle|corpus|fusions>
 tools/verify.sh <jar|counterless> [args...]
 ```

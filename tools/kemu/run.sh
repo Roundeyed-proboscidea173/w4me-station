@@ -12,6 +12,23 @@ fi
 # shellcheck disable=SC1091
 source "${ROOT_DIR}/tools/container/env.sh"
 
+compile_diagnostic_runtime() {
+    classes_dir="$1"
+    sources_file="$2"
+
+    mkdir -p -- "${classes_dir}"
+    find "${ROOT_DIR}/src/main/java" -name '*.java' -print |
+        sort >"${sources_file}"
+    javac \
+        -source "${J2ME_SOURCE}" \
+        -target "${J2ME_TARGET}" \
+        -Xlint:-options \
+        -bootclasspath "${J2ME_BOOTCLASSPATH}" \
+        -classpath "${MIDP_API_JAR}" \
+        -d "${classes_dir}" \
+        @"${sources_file}"
+}
+
 build_diagnostic_jar() {
     source_jar="$1"
     output_jar="$2"
@@ -1752,6 +1769,7 @@ cmd_bench_generic_corpus() {
     {
         printf 'GENERIC_CORPUS_PHONE_MATRIX workload=%s profile=%s samples=%s median-run=%s median-elapsed-ms=%s\n' \
             "${WORKLOAD}" "${PROFILE}" "${RUNS}" "${median_run}" "${median_ms}"
+        printf 'timing-authoritative=no runtime=KEmulator-HotSpot\n'
         printf 'source-jar-sha256=%s\n' "${source_sha256}"
         printf 'benchmark-jar-sha256=%s\n' "${benchmark_sha256}"
         printf 'cartridge-sha256=%s\n' "${cartridge_sha256}"
@@ -1829,6 +1847,7 @@ cmd_bench_generic_w4ir_matrix() {
     {
         printf 'GENERIC_W4IR_MATRIX mode=%s profile=%s samples=%s median-run=%s median-update-average-ms=%s\n' \
             "${MODE}" "${PROFILE}" "${RUNS}" "${median_run}" "${median_ms}"
+        printf 'timing-authoritative=no runtime=KEmulator-HotSpot\n'
         printf 'samples='
         awk 'BEGIN { first=1 } { if (!first) printf ","; printf "%s:%s", $1, $2; first=0 } END { printf "\n" }' \
             "${RESULT_DIR}/averages.txt"
@@ -1906,11 +1925,16 @@ cmd_bench_generic_w4ir() {
     rm -rf -- "${RESULT_DIR}"
     mkdir -p -- "${RESULT_DIR}" "${TEMP_DIR}/classes"
     cp -- "${SOURCE_JAR}" "${TEMP_DIR}/generic-w4ir-benchmark.jar"
+    compile_diagnostic_runtime \
+        "${TEMP_DIR}/diagnostic-classes" \
+        "${TEMP_DIR}/diagnostic-sources.list"
+    jar uf "${TEMP_DIR}/generic-w4ir-benchmark.jar" \
+        -C "${TEMP_DIR}/diagnostic-classes" .
     javac \
         -source "${J2ME_SOURCE}" \
         -target "${J2ME_TARGET}" \
         -Xlint:-options \
-        -classpath "${MIDP_API_JAR}:${ROOT_DIR}/build/midlet/classes" \
+        -classpath "${MIDP_API_JAR}:${TEMP_DIR}/diagnostic-classes" \
         -d "${TEMP_DIR}/classes" \
         "${FRAMEBUFFER_ORACLE_SOURCE}" \
         "${ROOT_DIR}/src/test/java/w4me/midp/DiagnosticW4MeMidlet.java" \
@@ -1924,6 +1948,9 @@ cmd_bench_generic_w4ir() {
     } >"${TEMP_DIR}/probe.mf"
     jar ufm "${TEMP_DIR}/generic-w4ir-benchmark.jar" "${TEMP_DIR}/probe.mf" \
         2>"${TEMP_DIR}/manifest.log"
+    BENCHMARK_SHA256="$(
+        sha256sum -- "${TEMP_DIR}/generic-w4ir-benchmark.jar" | cut -d ' ' -f 1
+    )"
 
     if [ "${PROFILE}" = "1" ] || [ "${PROFILE}" = "phone" ]; then
         "${ROOT_DIR}/tools/kemu/run.sh" phone \
@@ -1983,7 +2010,9 @@ cmd_bench_generic_w4ir() {
         exit 1
     fi
     {
+        printf 'timing-authoritative=no runtime=KEmulator-HotSpot\n'
         printf 'source-jar-sha256=%s\n' "$(sha256sum -- "${SOURCE_JAR}" | awk '{print $1}')"
+        printf 'benchmark-jar-sha256=%s\n' "${BENCHMARK_SHA256}"
         printf 'profile=%s\n' "${PROFILE_NAME}"
         if [ -f "${RESULT_DIR}/profile.txt" ]; then
             cat -- "${RESULT_DIR}/profile.txt"
@@ -2016,6 +2045,10 @@ cmd_bench_phone() {
         "W4ME Plasma Benchmark" \
         "w4me.midp.PlasmaBenchmarkMidlet" \
         "${ROOT_DIR}/src/test/java/w4me/midp/PlasmaBenchmarkMidlet.java"
+    SOURCE_SHA256="$(sha256sum -- "${JAR_PATH}" | cut -d ' ' -f 1)"
+    BENCHMARK_SHA256="$(
+        sha256sum -- "${TEMP_DIR}/plasma-benchmark.jar" | cut -d ' ' -f 1
+    )"
 
     "${ROOT_DIR}/tools/kemu/run.sh" phone "${TEMP_DIR}/plasma-benchmark.jar" \
         >"${RESULT_DIR}/profile.txt"
@@ -2047,8 +2080,13 @@ cmd_bench_phone() {
         printf 'error: constrained KEmulator did not produce a Plasma benchmark receipt\n' >&2
         exit 1
     fi
-    cat "${RESULT_DIR}/profile.txt"
-    cat "${RESULT_DIR}/result.txt"
+    {
+        printf 'timing-authoritative=no runtime=KEmulator-HotSpot\n'
+        printf 'source-jar-sha256=%s\n' "${SOURCE_SHA256}"
+        printf 'benchmark-jar-sha256=%s\n' "${BENCHMARK_SHA256}"
+        cat -- "${RESULT_DIR}/profile.txt" "${RESULT_DIR}/result.txt"
+    } >"${RESULT_DIR}/receipt.txt"
+    cat -- "${RESULT_DIR}/receipt.txt"
 }
 
 cmd_bench_plasma() {
@@ -2071,6 +2109,10 @@ cmd_bench_plasma() {
         "W4ME Plasma Benchmark" \
         "w4me.midp.PlasmaBenchmarkMidlet" \
         "${ROOT_DIR}/src/test/java/w4me/midp/PlasmaBenchmarkMidlet.java"
+    SOURCE_SHA256="$(sha256sum -- "${JAR_PATH}" | cut -d ' ' -f 1)"
+    BENCHMARK_SHA256="$(
+        sha256sum -- "${TEMP_DIR}/plasma-benchmark.jar" | cut -d ' ' -f 1
+    )"
 
     KEMU_SIZE=240x320 "${ROOT_DIR}/tools/kemu/run.sh" session \
         start "${TEMP_DIR}/plasma-benchmark.jar" >/dev/null
@@ -2082,7 +2124,13 @@ cmd_bench_plasma() {
         printf 'error: KEmulator did not produce the Plasma Cube benchmark receipt\n' >&2
         exit 1
     fi
-    cat "${RESULT_DIR}/result.txt"
+    {
+        printf 'timing-authoritative=no runtime=KEmulator-HotSpot\n'
+        printf 'source-jar-sha256=%s\n' "${SOURCE_SHA256}"
+        printf 'benchmark-jar-sha256=%s\n' "${BENCHMARK_SHA256}"
+        cat -- "${RESULT_DIR}/result.txt"
+    } >"${RESULT_DIR}/receipt.txt"
+    cat -- "${RESULT_DIR}/receipt.txt"
 }
 
 cmd_bench_untangle_matrix() {
@@ -2155,6 +2203,7 @@ cmd_bench_untangle_matrix() {
     median_run="${median%% *}"
     median_ms="${median##* }"
     {
+        printf 'timing-authoritative=no runtime=KEmulator-HotSpot\n'
         if [ "${MODE}" = "comparison" ]; then
             printf 'UNTANGLE_MATRIX mode=%s profile=%s samples=%s median-run=%s median-aggregate-ms=%s\n' \
                 "${MODE}" "${PROFILE}" "${RUNS}" "${median_run}" "${median_ms}"
@@ -2301,6 +2350,7 @@ cmd_bench_untangle() {
             "${TEMP_DIR}/worker.log" >"${RESULT_DIR}/phases.txt"
     fi
     {
+        printf 'timing-authoritative=no runtime=KEmulator-HotSpot\n'
         printf 'source-jar-sha256=%s\n' "$(sha256sum -- "${SOURCE_JAR}" | awk '{print $1}')"
         printf 'cartridge-sha256=%s\n' \
             "$(sha256sum -- "${ROOT_DIR}/cartridges/untangle.wasm" | awk '{print $1}')"
@@ -2332,6 +2382,10 @@ cmd_bench_w4ir() {
         "W4ME W4IR Benchmark" \
         "w4me.midp.DiagnosticBenchmarkLibraryMidlet" \
         "${ROOT_DIR}/src/test/java/w4me/midp/DiagnosticBenchmarkLibraryMidlet.java"
+    SOURCE_SHA256="$(sha256sum -- "${JAR_PATH}" | cut -d ' ' -f 1)"
+    BENCHMARK_SHA256="$(
+        sha256sum -- "${TEMP_DIR}/w4ir-benchmark.jar" | cut -d ' ' -f 1
+    )"
 
     KEMU_SIZE=240x320 "${ROOT_DIR}/tools/kemu/run.sh" session \
         start "${TEMP_DIR}/w4ir-benchmark.jar" >/dev/null
@@ -2355,8 +2409,12 @@ cmd_bench_w4ir() {
         printf 'error: cached W4IR benchmark did not page and promote hot code\n' >&2
         exit 1
     fi
-    printf '%s\n' "${build_receipt}" "${hit_receipt}" |
-        tee "${RESULT_DIR}/receipts.txt"
+    {
+        printf 'timing-authoritative=no runtime=KEmulator-HotSpot\n'
+        printf 'source-jar-sha256=%s\n' "${SOURCE_SHA256}"
+        printf 'benchmark-jar-sha256=%s\n' "${BENCHMARK_SHA256}"
+        printf '%s\n' "${build_receipt}" "${hit_receipt}"
+    } | tee "${RESULT_DIR}/receipt.txt"
 }
 
 usage() {

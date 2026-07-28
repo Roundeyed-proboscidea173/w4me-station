@@ -19,8 +19,10 @@ public final class RuntimeBenchmark {
                     "usage: font.bin mandelbrot.wasm duck-maze.wasm plasma-cube.wasm");
         }
         byte[] font = readFile(arguments[0]);
+        byte[] mandelbrot = readFile(arguments[1]);
+        benchmarkMandelbrotFirstUpdate(font, mandelbrot);
         benchmark(
-                "mandelbrot", font, readFile(arguments[1]),
+                "mandelbrot-steady-state", font, mandelbrot,
                 true, true, true, true, true, false);
         benchmark(
                 "duck-maze-gameplay", font, readFile(arguments[2]),
@@ -70,6 +72,48 @@ public final class RuntimeBenchmark {
                 true,
                 false,
                 false);
+    }
+
+    private static void benchmarkMandelbrotFirstUpdate(
+            byte[] font, byte[] cartridge) throws Exception {
+        long parseStarted = System.nanoTime();
+        WasmModule module = WasmModule.read(cartridge);
+        long parseNanos = System.nanoTime() - parseStarted;
+        Wasm4Runtime runtime = new Wasm4Runtime(font);
+        try {
+            runtime.initialize(module);
+            WasmInterpreter interpreter = new WasmInterpreter(module, runtime);
+            interpreter.setInstructionLimit(200000000L);
+            interpreter.invokeCartridgeLifecycle();
+            long updateStarted = System.nanoTime();
+            update(module, runtime, interpreter, 0);
+            long updateNanos = System.nanoTime() - updateStarted;
+            System.out.println(
+                    "BENCH cart=mandelbrot-first-update"
+                            + " parse-us="
+                            + nanosToMicros(parseNanos)
+                            + " update-us="
+                            + nanosToMicros(updateNanos)
+                            + " instructions="
+                            + interpreter.instructionsExecuted()
+                            + " dispatches="
+                            + interpreter.dispatchesExecuted()
+                            + " fast-paths="
+                            + interpreter.fastPathCalls()
+                            + " compact-blocks="
+                            + interpreter.compactBlockCalls()
+                            + " compact-instructions="
+                            + interpreter.compactInstructionsExecuted()
+                            + " trace-loops="
+                            + interpreter.traceLoopCalls()
+                            + " trace-iterations="
+                            + interpreter.traceLoopIterations()
+                            + " framebuffer-fnv1a="
+                            + Integer.toHexString(FramebufferOracle.fnv1a(module)));
+        } finally {
+            runtime.close();
+            module.close();
+        }
     }
 
     private static void benchmark(
