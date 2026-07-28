@@ -1510,7 +1510,7 @@ public final class WasmInterpreter {
                     pc++;
                     break;
                 case 0xb5:
-                    pushI32(Float.floatToIntBits((float) unsignedI64ToDouble(pop())));
+                    pushI32(Float.floatToIntBits(unsignedI64ToFloat(pop())));
                     pc++;
                     break;
                 case 0xb6:
@@ -4504,7 +4504,16 @@ public final class WasmInterpreter {
         if (value >= 0) {
             return (double) value;
         }
-        return (double) (value & Long.MAX_VALUE) + 9223372036854775808.0;
+        // Preserve the discarded low bit as a sticky bit before converting.
+        // Converting the low 63 bits and then adding 2^63 can round twice.
+        return (double) ((value >>> 1) | (value & 1L)) * 2.0;
+    }
+
+    private float unsignedI64ToFloat(long value) {
+        if (value >= 0) {
+            return (float) value;
+        }
+        return (float) ((value >>> 1) | (value & 1L)) * 2.0f;
     }
 
     private int floorF32Bits(int bits) {
