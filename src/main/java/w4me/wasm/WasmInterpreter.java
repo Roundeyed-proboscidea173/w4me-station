@@ -547,8 +547,12 @@ public final class WasmInterpreter {
                         && residentCode;
         int[] compactEnds = null;
         int budgetCheckLimit = instructionLimit;
+        int executed = this.instructionsExecuted;
+        boolean counterInField = false;
+        executeBody:
+        try {
         if (compactEligible) {
-            if (instructionsExecuted >= COMPACT_HOT_INVOCATION_THRESHOLD) {
+            if (executed >= COMPACT_HOT_INVOCATION_THRESHOLD) {
                 compactEnds = compactBlockEnds(functionIndex, body);
             } else if (COMPACT_HOT_INVOCATION_THRESHOLD < budgetCheckLimit) {
                 budgetCheckLimit = COMPACT_HOT_INVOCATION_THRESHOLD;
@@ -574,7 +578,11 @@ public final class WasmInterpreter {
                         dispatchesExecuted++;
                         compactBlockCalls++;
                     }
+                    this.instructionsExecuted = executed;
+                    counterInField = true;
                     executeCompactBlock(body.code, pc, compactEnd, locals);
+                    executed = this.instructionsExecuted;
+                    counterInField = false;
                     pc = compactEnd;
                     continue;
                 }
@@ -591,16 +599,16 @@ public final class WasmInterpreter {
             int opcode = instruction & 0xffff;
             int operand = code[pageOffset + 1];
             int auxiliary = code[pageOffset + 2];
-            if (instructionsExecuted >= budgetCheckLimit) {
-                if (instructionsExecuted >= instructionLimit) {
-                    instructionsExecuted++;
+            if (executed >= budgetCheckLimit) {
+                if (executed >= instructionLimit) {
+                    executed++;
                     throw new WasmTrap("instruction budget exhausted");
                 }
                 compactEnds = compactBlockEnds(functionIndex, body);
                 budgetCheckLimit = instructionLimit;
                 continue;
             }
-            instructionsExecuted++;
+            executed++;
             if (InterpreterBuildConfig.DIAGNOSTIC_COUNTERS) {
                 dispatchesExecuted++;
             }
@@ -683,7 +691,7 @@ public final class WasmInterpreter {
                 case 0x0b: {
                     if (pc == instructionCount - 1) {
                         finishFunction(functionStackBase, functionType.results.length);
-                        return;
+                        break executeBody;
                     }
                     if (controlTop <= 0) {
                         throw new WasmTrap("control stack underflow");
@@ -774,7 +782,7 @@ public final class WasmInterpreter {
                                 functionControlBase);
                     }
                     if (pc < 0) {
-                        return;
+                        break executeBody;
                     }
                     break;
                 case 0x0d:
@@ -860,7 +868,7 @@ public final class WasmInterpreter {
                                     functionControlBase);
                         }
                         if (pc < 0) {
-                            return;
+                            break executeBody;
                         }
                     } else {
                         if (InterpreterBuildConfig.DESCRIPTOR_SHADOW) {
@@ -902,14 +910,18 @@ public final class WasmInterpreter {
                                 functionControlBase);
                     }
                     if (pc < 0) {
-                        return;
+                        break executeBody;
                     }
                     break;
                 case 0x0f:
                     finishFunction(functionStackBase, functionType.results.length);
-                    return;
+                    break executeBody;
                 case 0x10:
+                    this.instructionsExecuted = executed;
+                    counterInField = true;
                     callFunction(operand);
+                    executed = this.instructionsExecuted;
+                    counterInField = false;
                     pc++;
                     break;
                 case 0x11:
@@ -928,7 +940,11 @@ public final class WasmInterpreter {
                             != expectedIndirectType.canonicalId) {
                         throw new WasmTrap("indirect call type mismatch");
                     }
+                    this.instructionsExecuted = executed;
+                    counterInField = true;
                     callFunction(indirectFunction);
+                    executed = this.instructionsExecuted;
+                    counterInField = false;
                     pc++;
                     break;
                 case 0x1a:
@@ -1589,14 +1605,14 @@ public final class WasmInterpreter {
                     pushI32(Float.floatToIntBits(
                             Float.intBitsToFloat((int) locals[operand])
                                     * Float.intBitsToFloat((int) locals[auxiliary])));
-                    instructionsExecuted += 2;
+                    executed += 2;
                     pc += 3;
                     break;
                 case WasmModule.W4IR_LOCAL_F32_CONST_MUL + WasmModule.W4IR_EXECUTION_OFFSET:
                     pushI32(Float.floatToIntBits(
                             Float.intBitsToFloat((int) locals[operand])
                                     * Float.intBitsToFloat(auxiliary)));
-                    instructionsExecuted += 2;
+                    executed += 2;
                     pc += 3;
                     break;
                 case WasmModule.W4IR_F32_CONST_MUL_ADD + WasmModule.W4IR_EXECUTION_OFFSET:
@@ -1604,27 +1620,27 @@ public final class WasmInterpreter {
                     float multiplyProduct = multiplyRight * Float.intBitsToFloat(operand);
                     float addLeft = Float.intBitsToFloat(popI32());
                     pushI32(Float.floatToIntBits(addLeft + multiplyProduct));
-                    instructionsExecuted += 2;
+                    executed += 2;
                     pc += 3;
                     break;
                 case WasmModule.W4IR_LOCAL_LOCAL_I32_AND + WasmModule.W4IR_EXECUTION_OFFSET:
                     pushI32((int) locals[operand] & (int) locals[auxiliary]);
-                    instructionsExecuted += 2;
+                    executed += 2;
                     pc += 3;
                     break;
                 case WasmModule.W4IR_LOCAL_LOCAL_I32_ADD + WasmModule.W4IR_EXECUTION_OFFSET:
                     pushI32((int) locals[operand] + (int) locals[auxiliary]);
-                    instructionsExecuted += 2;
+                    executed += 2;
                     pc += 3;
                     break;
                 case WasmModule.W4IR_LOCAL_I32_CONST_ADD + WasmModule.W4IR_EXECUTION_OFFSET:
                     pushI32((int) locals[operand] + auxiliary);
-                    instructionsExecuted += 2;
+                    executed += 2;
                     pc += 3;
                     break;
                 case WasmModule.W4IR_LOCAL_I32_CONST_AND + WasmModule.W4IR_EXECUTION_OFFSET:
                     pushI32((int) locals[operand] & auxiliary);
-                    instructionsExecuted += 2;
+                    executed += 2;
                     pc += 3;
                     break;
                 case WasmModule.W4IR_LOCAL_SET_LOCAL_LOCAL + WasmModule.W4IR_EXECUTION_OFFSET:
@@ -1633,12 +1649,12 @@ public final class WasmInterpreter {
                     locals[setLocalTarget] = pop();
                     push(locals[setLocalFirstSource]);
                     push(locals[auxiliary]);
-                    instructionsExecuted += 2;
+                    executed += 2;
                     pc += 3;
                     break;
                 case WasmModule.W4IR_LOCAL_I32_CONST_EQ + WasmModule.W4IR_EXECUTION_OFFSET:
                     pushI32((int) locals[operand] == auxiliary ? 1 : 0);
-                    instructionsExecuted += 2;
+                    executed += 2;
                     pc += 3;
                     break;
                 case WasmModule.W4IR_LOCAL_LOCAL_I32_CONST_AND + WasmModule.W4IR_EXECUTION_OFFSET:
@@ -1646,14 +1662,14 @@ public final class WasmInterpreter {
                     int andSecondSource = operand & 0xffff;
                     push(locals[andFirstSource]);
                     pushI32((int) locals[andSecondSource] & auxiliary);
-                    instructionsExecuted += 3;
+                    executed += 3;
                     pc += 4;
                     break;
                 case WasmModule.W4IR_LOCAL_LOCAL_F32_DIV + WasmModule.W4IR_EXECUTION_OFFSET:
                     float divideLeft = Float.intBitsToFloat((int) locals[operand]);
                     float divideRight = Float.intBitsToFloat((int) locals[auxiliary]);
                     pushI32(Float.floatToIntBits(divideLeft / divideRight));
-                    instructionsExecuted += 2;
+                    executed += 2;
                     pc += 3;
                     break;
                 case WasmModule.W4IR_LOCAL_SET_F32_CONST_SET + WasmModule.W4IR_EXECUTION_OFFSET:
@@ -1661,7 +1677,7 @@ public final class WasmInterpreter {
                     int setConstSecondTarget = operand & 0xffff;
                     locals[setConstFirstTarget] = pop();
                     locals[setConstSecondTarget] = auxiliary;
-                    instructionsExecuted += 2;
+                    executed += 2;
                     pc += 3;
                     break;
                 case WasmModule.W4IR_LOCAL_LOCAL_F32_LOAD + WasmModule.W4IR_EXECUTION_OFFSET:
@@ -1677,7 +1693,7 @@ public final class WasmInterpreter {
                         throw new WasmTrap("out-of-bounds memory access");
                     }
                     push(loadI32(loadBase + auxiliary) & 0xffffffffL);
-                    instructionsExecuted += 2;
+                    executed += 2;
                     pc += 3;
                     break;
                 case WasmModule.W4IR_LOCAL_TEE_F32_MUL_ADD + WasmModule.W4IR_EXECUTION_OFFSET:
@@ -1687,7 +1703,7 @@ public final class WasmInterpreter {
                     float teeAddLeft = Float.intBitsToFloat(popI32());
                     pushI32(Float.floatToIntBits(
                             teeAddLeft + teeMultiplyLeft * teeMultiplyRight));
-                    instructionsExecuted += 2;
+                    executed += 2;
                     pc += 3;
                     break;
                 case WasmModule.W4IR_LOCAL_F32_MUL_ADD + WasmModule.W4IR_EXECUTION_OFFSET:
@@ -1696,7 +1712,7 @@ public final class WasmInterpreter {
                     float localAddLeft = Float.intBitsToFloat(popI32());
                     pushI32(Float.floatToIntBits(
                             localAddLeft + localMultiplyLeft * localMultiplyRight));
-                    instructionsExecuted += 2;
+                    executed += 2;
                     pc += 3;
                     break;
                 case WasmModule.W4IR_LOCAL_LOCAL_F32_MUL_ADD + WasmModule.W4IR_EXECUTION_OFFSET:
@@ -1705,11 +1721,11 @@ public final class WasmInterpreter {
                     float localsAddLeft = Float.intBitsToFloat(popI32());
                     pushI32(Float.floatToIntBits(
                             localsAddLeft + localsMultiplyLeft * localsMultiplyRight));
-                    instructionsExecuted += 3;
+                    executed += 3;
                     pc += 4;
                     break;
                 case WasmModule.W4IR_LOCAL_I32_CONST_EQ_BR_IF + WasmModule.W4IR_EXECUTION_OFFSET:
-                    instructionsExecuted += 3;
+                    executed += 3;
                     int compareBranchLocal = instruction >>> 16;
                     if ((int) locals[compareBranchLocal] == operand) {
                         if (InterpreterBuildConfig.DESCRIPTOR_SHADOW) {
@@ -1728,7 +1744,7 @@ public final class WasmInterpreter {
                                     functionControlBase);
                         }
                         if (pc < 0) {
-                            return;
+                            break executeBody;
                         }
                     } else {
                         if (InterpreterBuildConfig.DESCRIPTOR_SHADOW) {
@@ -1762,7 +1778,7 @@ public final class WasmInterpreter {
                     locals[teeCombinedSetTarget] = teeCombinedResult & 0xffffffffL;
                     push(locals[teeCombinedFirstSource]);
                     push(locals[teeCombinedSecondSource]);
-                    instructionsExecuted += 5;
+                    executed += 5;
                     pc += 6;
                     break;
                 case WasmModule.W4IR_LOCAL_MUL_ADD_SET + WasmModule.W4IR_EXECUTION_OFFSET:
@@ -1774,7 +1790,7 @@ public final class WasmInterpreter {
                     int localSetResult = Float.floatToIntBits(
                             localSetAddLeft + localSetMultiplyLeft * localSetMultiplyRight);
                     locals[operand] = localSetResult & 0xffffffffL;
-                    instructionsExecuted += 3;
+                    executed += 3;
                     pc += 4;
                     break;
                 case WasmModule.W4IR_F32_LOAD_LOCAL_MUL_ADD + WasmModule.W4IR_EXECUTION_OFFSET:
@@ -1785,11 +1801,11 @@ public final class WasmInterpreter {
                     float loadAddLeft = Float.intBitsToFloat(popI32());
                     pushI32(Float.floatToIntBits(
                             loadAddLeft + loadMultiplyLeft * loadMultiplyRight));
-                    instructionsExecuted += 3;
+                    executed += 3;
                     pc += 4;
                     break;
                 case WasmModule.W4IR_LOCAL_ADD_SET_BR + WasmModule.W4IR_EXECUTION_OFFSET:
-                    instructionsExecuted += 4;
+                    executed += 4;
                     if (InterpreterBuildConfig.DESCRIPTOR_SHADOW) {
                         pc = executeLocalAddSetBranchShadow(
                                 body,
@@ -1812,49 +1828,51 @@ public final class WasmInterpreter {
                                 functionControlBase);
                     }
                     if (pc < 0) {
-                        return;
+                        break executeBody;
                     }
                     break;
                 case WasmModule.W4IR_LOCAL_SET_ADD_SET + WasmModule.W4IR_EXECUTION_OFFSET:
                     executeLocalSetAddSet(instruction, operand, auxiliary, locals);
-                    instructionsExecuted += 4;
+                    executed += 4;
                     pc += 5;
                     break;
                 case WasmModule.W4IR_LOCAL_SET_LOCAL_LOCAL_F32_LOAD + WasmModule.W4IR_EXECUTION_OFFSET:
                     executeLocalSetLocalLocalF32Load(
                             instruction, operand, auxiliary, locals);
-                    instructionsExecuted += 3;
+                    executed += 3;
                     pc += 4;
                     break;
                 case WasmModule.W4IR_LOCAL_LOCAL_F32_LOAD_LOCAL + WasmModule.W4IR_EXECUTION_OFFSET:
                     executeLocalLocalF32LoadLocal(
                             instruction, operand, auxiliary, locals);
-                    instructionsExecuted += 3;
+                    executed += 3;
                     pc += 4;
                     break;
                 case WasmModule.W4IR_F32_LOAD_NEG + WasmModule.W4IR_EXECUTION_OFFSET:
                     executeF32LoadNeg(operand);
-                    instructionsExecuted++;
+                    executed++;
                     pc += 2;
                     break;
                 case WasmModule.W4IR_F32_LOAD_DIV + WasmModule.W4IR_EXECUTION_OFFSET:
                     executeF32LoadDiv(operand);
-                    instructionsExecuted++;
+                    executed++;
                     pc += 2;
                     break;
                 case WasmModule.W4IR_F32_DIV_TEE_MUL_ADD_SET_LOCAL_LOCAL + WasmModule.W4IR_EXECUTION_OFFSET:
                     executeF32DivTeeMulAddSetLocalLocal(
                             instruction, operand, auxiliary, locals);
-                    instructionsExecuted += 6;
+                    executed += 6;
                     pc += 7;
                     break;
                 case WasmModule.W4IR_F32_LOAD_LOCAL_MUL_ADD_SET + WasmModule.W4IR_EXECUTION_OFFSET:
                     executeF32LoadLocalMulAddSet(
                             instruction, operand, auxiliary, locals);
-                    instructionsExecuted += 4;
+                    executed += 4;
                     pc += 5;
                     break;
                 case WasmModule.W4IR_BR_IF_LOCAL_I32_CONST + WasmModule.W4IR_EXECUTION_OFFSET:
+                    this.instructionsExecuted = executed;
+                    counterInField = true;
                     if (InterpreterBuildConfig.DESCRIPTOR_SHADOW) {
                         pc = executeBranchIfLocalI32ConstShadow(
                                 body,
@@ -1877,43 +1895,47 @@ public final class WasmInterpreter {
                                 functionType.results.length,
                                 functionControlBase);
                     }
+                    executed = this.instructionsExecuted;
+                    counterInField = false;
                     if (pc < 0) {
-                        return;
+                        break executeBody;
                     }
                     break;
                 case WasmModule.W4IR_LOCAL_TRIPLE_F32_STORE + WasmModule.W4IR_EXECUTION_OFFSET:
                     executeLocalTripleF32Store(instruction, operand, auxiliary, locals);
-                    instructionsExecuted += 8;
+                    executed += 8;
                     pc += 9;
                     break;
                 case WasmModule.W4IR_LOCAL4_F32_MUL_ADD_TEE + WasmModule.W4IR_EXECUTION_OFFSET:
                     executeLocal4F32MulAddTee(instruction, operand, auxiliary, locals);
-                    instructionsExecuted += 7;
+                    executed += 7;
                     pc += 8;
                     break;
                 case WasmModule.W4IR_F32_LOAD_NEG_INDEX_DIV + WasmModule.W4IR_EXECUTION_OFFSET:
                     executeF32LoadNegIndexDiv(instruction, operand, auxiliary, locals);
-                    instructionsExecuted += 10;
+                    executed += 10;
                     pc += 11;
                     break;
                 case WasmModule.W4IR_TRIPLE_F32_STORE_LOCAL_LOAD_LOCAL + WasmModule.W4IR_EXECUTION_OFFSET:
                     executeTripleF32StoreLocalLoadLocal(
                             instruction, operand, auxiliary, locals);
-                    instructionsExecuted += 12;
+                    executed += 12;
                     pc += 13;
                     break;
                 case WasmModule.W4IR_LOCAL_TEE_MUL_ADD_SET_LOAD_MUL_ADD + WasmModule.W4IR_EXECUTION_OFFSET:
                     executeLocalTeeMulAddSetLoadMulAdd(
                             instruction, operand, auxiliary, locals);
-                    instructionsExecuted += 9;
+                    executed += 9;
                     pc += 10;
                     break;
                 case WasmModule.W4IR_LOCAL_SET_DUAL_ADD_SET + WasmModule.W4IR_EXECUTION_OFFSET:
                     executeLocalSetDualAddSet(instruction, operand, auxiliary, locals);
-                    instructionsExecuted += 8;
+                    executed += 8;
                     pc += 9;
                     break;
                 case WasmModule.W4IR_COUNTED_F32_TRACE + WasmModule.W4IR_EXECUTION_OFFSET:
+                    this.instructionsExecuted = executed;
+                    counterInField = true;
                     if (traceExecutorEnabled) {
                         pc = executeCountedF32Trace(
                                 body,
@@ -1949,21 +1971,27 @@ public final class WasmInterpreter {
                                     functionControlBase);
                         }
                     }
+                    executed = this.instructionsExecuted;
+                    counterInField = false;
                     if (pc < 0) {
-                        return;
+                        break executeBody;
                     }
                     break;
                 case WasmModule.W4IR_F32_FLOOR_INTRINSIC + WasmModule.W4IR_EXECUTION_OFFSET:
                 case WasmModule.W4IR_F32_SIN_INTRINSIC + WasmModule.W4IR_EXECUTION_OFFSET:
+                    this.instructionsExecuted = executed;
+                    counterInField = true;
                     executeNumericIntrinsicInstruction(
                             operand,
                             opcode == WasmModule.W4IR_F32_SIN_INTRINSIC + WasmModule.W4IR_EXECUTION_OFFSET);
+                    executed = this.instructionsExecuted;
+                    counterInField = false;
                     pc++;
                     break;
                 case WasmModule.W4IR_I32_LOAD_LOCAL_TEE + WasmModule.W4IR_EXECUTION_OFFSET:
                     pushI32(loadI32(address(operand, 4)));
-                    instructionsExecuted++;
-                    if (instructionsExecuted > instructionLimit) {
+                    executed++;
+                    if (executed > instructionLimit) {
                         throw new WasmTrap("instruction budget exhausted");
                     }
                     locals[auxiliary] = peek();
@@ -1972,20 +2000,20 @@ public final class WasmInterpreter {
                 case WasmModule.W4IR_LOCAL_LOCAL + WasmModule.W4IR_EXECUTION_OFFSET:
                     push(locals[operand]);
                     push(locals[auxiliary]);
-                    instructionsExecuted++;
+                    executed++;
                     pc += 2;
                     break;
                 case WasmModule.W4IR_LOCAL_I32_CONST + WasmModule.W4IR_EXECUTION_OFFSET:
                 case WasmModule.W4IR_LOCAL_F32_CONST + WasmModule.W4IR_EXECUTION_OFFSET:
                     push(locals[operand]);
                     push(auxiliary);
-                    instructionsExecuted++;
+                    executed++;
                     pc += 2;
                     break;
                 case WasmModule.W4IR_F32_MUL_CONST + WasmModule.W4IR_EXECUTION_OFFSET:
                     pushI32(Float.floatToIntBits(
                             Float.intBitsToFloat(popI32()) * Float.intBitsToFloat(operand)));
-                    instructionsExecuted++;
+                    executed++;
                     pc += 2;
                     break;
                 case WasmModule.W4IR_F32_MUL_ADD + WasmModule.W4IR_EXECUTION_OFFSET:
@@ -1994,34 +2022,34 @@ public final class WasmInterpreter {
                     float pairProduct = pairMultiplyLeft * pairMultiplyRight;
                     float pairAddLeft = Float.intBitsToFloat(popI32());
                     pushI32(Float.floatToIntBits(pairAddLeft + pairProduct));
-                    instructionsExecuted++;
+                    executed++;
                     pc += 2;
                     break;
                 case WasmModule.W4IR_I32_ADD_CONST + WasmModule.W4IR_EXECUTION_OFFSET:
                     pushI32(popI32() + operand);
-                    instructionsExecuted++;
+                    executed++;
                     pc += 2;
                     break;
                 case WasmModule.W4IR_I32_AND_CONST + WasmModule.W4IR_EXECUTION_OFFSET:
                     pushI32(popI32() & operand);
-                    instructionsExecuted++;
+                    executed++;
                     pc += 2;
                     break;
                 case WasmModule.W4IR_LOCAL_SET_GET + WasmModule.W4IR_EXECUTION_OFFSET:
                     locals[operand] = pop();
                     push(locals[auxiliary]);
-                    instructionsExecuted++;
+                    executed++;
                     pc += 2;
                     break;
                 case WasmModule.W4IR_LOCAL_SET_F32_CONST + WasmModule.W4IR_EXECUTION_OFFSET:
                     locals[auxiliary] = operand;
-                    instructionsExecuted++;
+                    executed++;
                     pc += 2;
                     break;
                 case WasmModule.W4IR_F32_MUL_LOCAL + WasmModule.W4IR_EXECUTION_OFFSET:
                     binaryF32(0x94);
                     push(locals[auxiliary]);
-                    instructionsExecuted++;
+                    executed++;
                     pc += 2;
                     break;
                 case WasmModule.W4IR_LOCAL_I32_CONST_ADD_SET + WasmModule.W4IR_EXECUTION_OFFSET:
@@ -2029,7 +2057,7 @@ public final class WasmInterpreter {
                         int addSource = operand >>> 16;
                         int addTarget = operand & 0xffff;
                         locals[addTarget] = (int) locals[addSource] + auxiliary;
-                        instructionsExecuted += 3;
+                        executed += 3;
                         pc += 4;
                         if (pc >= instructionCount) {
                             break;
@@ -2047,8 +2075,8 @@ public final class WasmInterpreter {
                         }
                         operand = code[nextAddPageOffset + 1];
                         auxiliary = code[nextAddPageOffset + 2];
-                        instructionsExecuted++;
-                        if (instructionsExecuted > instructionLimit) {
+                        executed++;
+                        if (executed > instructionLimit) {
                             throw new WasmTrap("instruction budget exhausted");
                         }
                     }
@@ -2066,7 +2094,7 @@ public final class WasmInterpreter {
                             throw new WasmTrap("out-of-bounds memory access");
                         }
                         storeI32(storeBase + auxiliary, (int) locals[storeValueLocal]);
-                        instructionsExecuted += 2;
+                        executed += 2;
                         pc += 3;
                         if (pc >= instructionCount) {
                             break;
@@ -2084,8 +2112,8 @@ public final class WasmInterpreter {
                         }
                         operand = code[nextStorePageOffset + 1];
                         auxiliary = code[nextStorePageOffset + 2];
-                        instructionsExecuted++;
-                        if (instructionsExecuted > instructionLimit) {
+                        executed++;
+                        if (executed > instructionLimit) {
                             throw new WasmTrap("instruction budget exhausted");
                         }
                     }
@@ -2098,6 +2126,11 @@ public final class WasmInterpreter {
             }
         }
         throw new WasmTrap("function ended without end opcode");
+        } finally {
+            if (!counterInField) {
+                this.instructionsExecuted = executed;
+            }
+        }
     }
 
     private void profileInstruction(
@@ -4562,24 +4595,40 @@ public final class WasmInterpreter {
     }
 
     private long pop() {
-        if (valueTop <= 0) {
-            throw new WasmTrap("value stack underflow");
+        try {
+            return values[--valueTop];
+        } catch (ArrayIndexOutOfBoundsException failure) {
+            valueTop++;
+            if (valueTop <= 0) {
+                throw new WasmTrap("value stack underflow");
+            }
+            valueTop--;
+            throw failure;
         }
-        return values[--valueTop];
     }
 
     private int popI32() {
-        if (valueTop <= 0) {
-            throw new WasmTrap("value stack underflow");
+        try {
+            return (int) values[--valueTop];
+        } catch (ArrayIndexOutOfBoundsException failure) {
+            valueTop++;
+            if (valueTop <= 0) {
+                throw new WasmTrap("value stack underflow");
+            }
+            valueTop--;
+            throw failure;
         }
-        return (int) values[--valueTop];
     }
 
     private long peek() {
-        if (valueTop <= 0) {
-            throw new WasmTrap("value stack underflow");
+        try {
+            return values[valueTop - 1];
+        } catch (ArrayIndexOutOfBoundsException failure) {
+            if (valueTop <= 0) {
+                throw new WasmTrap("value stack underflow");
+            }
+            throw failure;
         }
-        return values[valueTop - 1];
     }
 
     private int popI32First() {

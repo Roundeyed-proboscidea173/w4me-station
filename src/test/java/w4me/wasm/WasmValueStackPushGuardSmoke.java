@@ -38,11 +38,12 @@ public final class WasmValueStackPushGuardSmoke {
 
     public static void main(String[] arguments) throws Exception {
         verifyPrivateHelperEdges();
+        verifyPrivatePopEdges();
         verifyValidatedNestedOverflow();
         verifyMalformedCachedOverflow();
         System.out.println(
-                "PASS value-stack-push-guard"
-                        + " helper-edges=7"
+                "PASS value-stack-guards"
+                        + " helper-edges=49"
                         + " nested-overflow=PASS"
                         + " cached-paged-promoted=PASS");
     }
@@ -125,11 +126,108 @@ public final class WasmValueStackPushGuardSmoke {
         }
     }
 
+    private static void verifyPrivatePopEdges() throws Exception {
+        WasmModule module = WasmModule.read(minimalModule());
+        try {
+            WasmInterpreter interpreter = new WasmInterpreter(module, NO_HOST);
+            Field topField = WasmInterpreter.class.getDeclaredField("valueTop");
+            topField.setAccessible(true);
+            Field valuesField = WasmInterpreter.class.getDeclaredField("values");
+            valuesField.setAccessible(true);
+            long[] values = (long[]) valuesField.get(interpreter);
+            Method popMethod =
+                    WasmInterpreter.class.getDeclaredMethod("pop", new Class[0]);
+            Method popI32Method =
+                    WasmInterpreter.class.getDeclaredMethod("popI32", new Class[0]);
+            Method peekMethod =
+                    WasmInterpreter.class.getDeclaredMethod("peek", new Class[0]);
+            popMethod.setAccessible(true);
+            popI32Method.setAccessible(true);
+            peekMethod.setAccessible(true);
+
+            int[] tops = new int[] {
+                Integer.MIN_VALUE,
+                Integer.MIN_VALUE + 1,
+                -2,
+                -1,
+                0,
+                1,
+                2,
+                VALUE_STACK_LIMIT - 2,
+                VALUE_STACK_LIMIT - 1,
+                VALUE_STACK_LIMIT,
+                VALUE_STACK_LIMIT + 1,
+                VALUE_STACK_LIMIT + 2,
+                Integer.MAX_VALUE - 1,
+                Integer.MAX_VALUE
+            };
+            int index;
+            for (index = 0; index < tops.length; index++) {
+                verifyPopEdge(
+                        "pop", popMethod, interpreter, topField, values, tops[index], false);
+                verifyPopEdge(
+                        "popI32", popI32Method, interpreter, topField, values,
+                        tops[index], false);
+                verifyPopEdge(
+                        "peek", peekMethod, interpreter, topField, values, tops[index], true);
+            }
+        } finally {
+            module.close();
+        }
+    }
+
+    private static void verifyPopEdge(
+            String label,
+            Method method,
+            WasmInterpreter interpreter,
+            Field topField,
+            long[] values,
+            int oldTop,
+            boolean peek)
+            throws Exception {
+        int index;
+        for (index = 0; index < values.length; index++) {
+            values[index] = 0x0f0f0f0f0f0f0f0fL;
+        }
+        topField.setInt(interpreter, oldTop);
+        Throwable failure = invokeNoArgs(method, interpreter);
+        int expectedTop = peek || oldTop <= 0 ? oldTop : oldTop - 1;
+        int actualTop = topField.getInt(interpreter);
+        if (actualTop != expectedTop) {
+            throw new AssertionError(
+                    label + " top mismatch at " + oldTop + ": " + actualTop);
+        }
+        if (oldTop <= 0) {
+            requireUnderflow(failure, label + " top " + oldTop);
+        } else if (oldTop <= VALUE_STACK_LIMIT) {
+            if (failure != null) {
+                throw new AssertionError(
+                        label + " valid access failed at " + oldTop + ": " + failure);
+            }
+        } else if (!(failure instanceof ArrayIndexOutOfBoundsException)) {
+            throw new AssertionError(
+                    label + " malformed high top changed failure at "
+                            + oldTop
+                            + ": "
+                            + failure);
+        }
+    }
+
     private static Throwable invokePush(
             Method pushMethod, WasmInterpreter interpreter, long value)
             throws Exception {
         try {
             pushMethod.invoke(interpreter, new Object[] {new Long(value)});
+            return null;
+        } catch (InvocationTargetException wrapped) {
+            return wrapped.getTargetException();
+        }
+    }
+
+    private static Throwable invokeNoArgs(Method method, WasmInterpreter interpreter)
+            throws Exception {
+        try {
+            method.invoke(interpreter, new Object[0]);
             return null;
         } catch (InvocationTargetException wrapped) {
             return wrapped.getTargetException();
@@ -215,6 +313,14 @@ public final class WasmValueStackPushGuardSmoke {
     private static void requireExhausted(Throwable failure, String label) {
         if (!(failure instanceof WasmTrap)
                 || !"value stack exhausted".equals(failure.getMessage())) {
+            throw new AssertionError(
+                    label + " reached the wrong failure: " + failure);
+        }
+    }
+
+    private static void requireUnderflow(Throwable failure, String label) {
+        if (!(failure instanceof WasmTrap)
+                || !"value stack underflow".equals(failure.getMessage())) {
             throw new AssertionError(
                     label + " reached the wrong failure: " + failure);
         }
