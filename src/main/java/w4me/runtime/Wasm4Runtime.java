@@ -26,6 +26,13 @@ public final class Wasm4Runtime implements WasmHost {
     private static final int TRACE_OUTPUT_LIMIT = 4096;
     private static final int LINE_STEP_LIMIT = 4096;
     private static final int OVAL_DIMENSION_LIMIT = 512;
+    /** Expands four left-to-right 1bpp pixels to a packed 2bpp mask. */
+    private static final int[] GLYPH_1BPP_MASK = {
+        0x00, 0xc0, 0x30, 0xf0,
+        0x0c, 0xcc, 0x3c, 0xfc,
+        0x03, 0xc3, 0x33, 0xf3,
+        0x0f, 0xcf, 0x3f, 0xff
+    };
 
     private final byte[] font;
     private final int[] palette = new int[4];
@@ -500,6 +507,40 @@ public final class Wasm4Runtime implements WasmHost {
                 pixels[destinationRow + x] =
                         argbLookup[(packed << 2) | (mapping >>> 8)];
             }
+        }
+    }
+
+    /** Copies native 160 by 160 rows without scaling-map lookups. */
+    public void copyNativeArgbBand(
+            WasmModule module,
+            int[] pixels,
+            int firstRow,
+            int rowCount) {
+        if (firstRow < 0
+                || rowCount < 0
+                || firstRow > HEIGHT
+                || rowCount > HEIGHT - firstRow
+                || pixels.length < WIDTH * rowCount) {
+            throw new IllegalArgumentException(
+                    "invalid native ARGB band geometry");
+        }
+        byte[] memory = module.memory();
+        int[] lookup = argbLookup;
+        int packedIndex =
+                firstRow * (WIDTH >> 2);
+        int packedEnd =
+                (firstRow + rowCount) * (WIDTH >> 2);
+        int pixel = 0;
+        while (packedIndex < packedEnd) {
+            int base =
+                    (memory[FRAMEBUFFER + packedIndex] & 0xff)
+                            << 2;
+            pixels[pixel] = lookup[base];
+            pixels[pixel + 1] = lookup[base + 1];
+            pixels[pixel + 2] = lookup[base + 2];
+            pixels[pixel + 3] = lookup[base + 3];
+            packedIndex++;
+            pixel += 4;
         }
     }
 
@@ -1138,6 +1179,18 @@ public final class Wasm4Runtime implements WasmHost {
     private void drawGlyph(byte[] memory, int character, int x, int y) {
         int colors = readU16(memory, DRAW_COLORS);
         int glyphOffset = (character - 32) << 3;
+        if (x >= 0
+                && x <= WIDTH - 8
+                && y < HEIGHT
+                && y + 8 > 0) {
+            drawGlyphPacked(
+                    memory,
+                    glyphOffset,
+                    x,
+                    y,
+                    colors);
+            return;
+        }
         int row;
         for (row = 0; row < 8; row++) {
             int targetY = y + row;
@@ -1157,6 +1210,147 @@ public final class Wasm4Runtime implements WasmHost {
                     drawPoint(memory, (drawColor - 1) & 3, targetX, targetY);
                 }
             }
+        }
+    }
+
+    private void drawGlyphPacked(
+            byte[] memory,
+            int glyphOffset,
+            int x,
+            int y,
+            int colors) {
+        int drawColor0 = colors & 0x0f;
+        int drawColor1 = (colors >> 4) & 0x0f;
+        if (drawColor0 == 0 && drawColor1 == 0) {
+            return;
+        }
+        int color0 = (drawColor0 - 1) & 3;
+        int color1 = (drawColor1 - 1) & 3;
+        int packedColor0 = color0 * 0x55;
+        int packedColor1 = color1 * 0x55;
+        int packedDifference =
+                packedColor0 ^ packedColor1;
+        int firstRow = y < 0 ? -y : 0;
+        int lastRow = HEIGHT - y;
+        if (lastRow > 8) {
+            lastRow = 8;
+        }
+        int address =
+                FRAMEBUFFER
+                        + (((y + firstRow) * WIDTH + x) >> 2);
+        int shift = (x & 3) << 1;
+        int row;
+        if (shift == 0) {
+            if (drawColor0 != 0 && drawColor1 != 0) {
+                for (row = firstRow; row < lastRow; row++) {
+                    int bits =
+                            font[glyphOffset + row] & 0xff;
+                    int highMask =
+                            GLYPH_1BPP_MASK[bits >>> 4];
+                    int lowMask =
+                            GLYPH_1BPP_MASK[bits & 0x0f];
+                    memory[address] =
+                            (byte) (packedColor0
+                                    ^ (highMask
+                                            & packedDifference));
+                    memory[address + 1] =
+                            (byte) (packedColor0
+                                    ^ (lowMask
+                                            & packedDifference));
+                    address += WIDTH >> 2;
+                }
+            } else if (drawColor0 != 0) {
+                for (row = firstRow; row < lastRow; row++) {
+                    int bits =
+                            font[glyphOffset + row] & 0xff;
+                    int highMask =
+                            GLYPH_1BPP_MASK[bits >>> 4];
+                    int lowMask =
+                            GLYPH_1BPP_MASK[bits & 0x0f];
+                    int highOpaque =
+                            (~highMask) & 0xff;
+                    int lowOpaque =
+                            (~lowMask) & 0xff;
+                    memory[address] =
+                            (byte) (((memory[address] & 0xff)
+                                            & ~highOpaque)
+                                    | (packedColor0
+                                            & highOpaque));
+                    memory[address + 1] =
+                            (byte) (((memory[address + 1] & 0xff)
+                                            & ~lowOpaque)
+                                    | (packedColor0
+                                            & lowOpaque));
+                    address += WIDTH >> 2;
+                }
+            } else {
+                for (row = firstRow; row < lastRow; row++) {
+                    int bits =
+                            font[glyphOffset + row] & 0xff;
+                    int highMask =
+                            GLYPH_1BPP_MASK[bits >>> 4];
+                    int lowMask =
+                            GLYPH_1BPP_MASK[bits & 0x0f];
+                    memory[address] =
+                            (byte) (((memory[address] & 0xff)
+                                            & ~highMask)
+                                    | (packedColor1
+                                            & highMask));
+                    memory[address + 1] =
+                            (byte) (((memory[address + 1] & 0xff)
+                                            & ~lowMask)
+                                    | (packedColor1
+                                            & lowMask));
+                    address += WIDTH >> 2;
+                }
+            }
+            return;
+        }
+
+        int packedColor0Wide = color0 * 0x5555;
+        int packedColor1Wide = color1 * 0x5555;
+        int packedDifferenceWide =
+                packedColor0Wide ^ packedColor1Wide;
+        for (row = firstRow; row < lastRow; row++) {
+            int bits = font[glyphOffset + row] & 0xff;
+            int glyphMask =
+                    GLYPH_1BPP_MASK[bits >>> 4]
+                            | (GLYPH_1BPP_MASK[bits & 0x0f]
+                                    << 8);
+            int writeMask;
+            int glyphPixels;
+            if (drawColor0 != 0 && drawColor1 != 0) {
+                writeMask = 0xffff;
+                glyphPixels =
+                        packedColor0Wide
+                                ^ (glyphMask
+                                        & packedDifferenceWide);
+            } else if (drawColor0 != 0) {
+                writeMask = (~glyphMask) & 0xffff;
+                glyphPixels =
+                        packedColor0Wide & writeMask;
+            } else {
+                writeMask = glyphMask;
+                glyphPixels =
+                        packedColor1Wide & writeMask;
+            }
+            writeMask <<= shift;
+            glyphPixels <<= shift;
+            int previous =
+                    (memory[address] & 0xff)
+                            | ((memory[address + 1] & 0xff)
+                                    << 8)
+                            | ((memory[address + 2] & 0xff)
+                                    << 16);
+            int result =
+                    (previous & ~writeMask)
+                            | glyphPixels;
+            memory[address] = (byte) result;
+            memory[address + 1] =
+                    (byte) (result >> 8);
+            memory[address + 2] =
+                    (byte) (result >> 16);
+            address += WIDTH >> 2;
         }
     }
 

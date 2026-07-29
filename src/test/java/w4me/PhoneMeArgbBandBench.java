@@ -169,7 +169,13 @@ public final class PhoneMeArgbBandBench {
             int[] yMap,
             int firstRow,
             int rowCount) {
-        if (side > Wasm4Runtime.WIDTH) {
+        if (side == Wasm4Runtime.WIDTH) {
+            runtime.copyNativeArgbBand(
+                    module,
+                    pixels,
+                    firstRow,
+                    rowCount);
+        } else if (side > Wasm4Runtime.WIDTH) {
             runtime.copyUpscaledArgbBand(
                     module,
                     pixels,

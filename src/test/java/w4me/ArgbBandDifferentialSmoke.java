@@ -43,6 +43,7 @@ public final class ArgbBandDifferentialSmoke {
                 runtime.prepareArgb(module);
                 verifyCanonicalReference(
                         runtime, module);
+                verifyNative(runtime, module);
                 int sideIndex;
                 for (sideIndex = 0;
                         sideIndex < sides.length;
@@ -60,6 +61,84 @@ public final class ArgbBandDifferentialSmoke {
             runtime.close();
             module.close();
         }
+    }
+
+    private void verifyNative(
+            Wasm4Runtime runtime,
+            WasmModule module) {
+        int[] xMap = createXMap(Wasm4Runtime.WIDTH);
+        int[] yMap = createYMap(Wasm4Runtime.HEIGHT);
+        int[] heights =
+                {1, 2, 15, 16, 17, Wasm4Runtime.HEIGHT};
+        int heightIndex;
+        for (heightIndex = 0;
+                heightIndex < heights.length;
+                heightIndex++) {
+            int bandHeight = heights[heightIndex];
+            int[] expected =
+                    new int[Wasm4Runtime.WIDTH * bandHeight + 7];
+            int[] actual = new int[expected.length];
+            int firstRow;
+            for (firstRow = 0;
+                    firstRow < Wasm4Runtime.HEIGHT;
+                    firstRow += bandHeight) {
+                int rowCount =
+                        Wasm4Runtime.HEIGHT - firstRow;
+                if (rowCount > bandHeight) {
+                    rowCount = bandHeight;
+                }
+                fill(expected, SENTINEL);
+                fill(actual, SENTINEL);
+                runtime.copyArgbBand(
+                        module,
+                        expected,
+                        Wasm4Runtime.WIDTH,
+                        xMap,
+                        yMap,
+                        firstRow,
+                        rowCount);
+                runtime.copyNativeArgbBand(
+                        module,
+                        actual,
+                        firstRow,
+                        rowCount);
+                assertArray(
+                        expected,
+                        actual,
+                        "native ARGB band");
+                assertSentinel(
+                        expected,
+                        Wasm4Runtime.WIDTH * rowCount);
+                assertSentinel(
+                        actual,
+                        Wasm4Runtime.WIDTH * rowCount);
+                cases++;
+            }
+        }
+        expectNativeIllegalArgument(
+                runtime,
+                module,
+                new int[Wasm4Runtime.WIDTH],
+                -1,
+                1);
+        expectNativeIllegalArgument(
+                runtime,
+                module,
+                new int[Wasm4Runtime.WIDTH],
+                0,
+                -1);
+        expectNativeIllegalArgument(
+                runtime,
+                module,
+                new int[Wasm4Runtime.WIDTH],
+                Wasm4Runtime.HEIGHT,
+                1);
+        expectNativeIllegalArgument(
+                runtime,
+                module,
+                new int[Wasm4Runtime.WIDTH - 1],
+                0,
+                1);
     }
 
     private void verifyScale(
@@ -608,6 +687,25 @@ public final class ArgbBandDifferentialSmoke {
                     width,
                     xMap,
                     yMap,
+                    firstRow,
+                    rowCount);
+            throw new AssertionError(
+                    "expected IllegalArgumentException");
+        } catch (IllegalArgumentException expected) {
+            cases++;
+        }
+    }
+
+    private void expectNativeIllegalArgument(
+            Wasm4Runtime runtime,
+            WasmModule module,
+            int[] pixels,
+            int firstRow,
+            int rowCount) {
+        try {
+            runtime.copyNativeArgbBand(
+                    module,
+                    pixels,
                     firstRow,
                     rowCount);
             throw new AssertionError(

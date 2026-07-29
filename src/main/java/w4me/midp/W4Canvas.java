@@ -687,13 +687,23 @@ final class W4Canvas extends GameCanvas implements Runnable, CommandListener {
                         controlHeight);
             }
             renderSide = side;
-            xMap = new int[side];
-            yMap = new int[side];
-            int index;
-            for (index = 0; index < side; index++) {
-                int source = index * Wasm4Runtime.WIDTH / side;
-                xMap[index] = (source >> 2) | ((source & 3) << 8);
-                yMap[index] = source * (Wasm4Runtime.WIDTH >> 2);
+            if (side == Wasm4Runtime.WIDTH) {
+                xMap = null;
+                yMap = null;
+            } else {
+                xMap = new int[side];
+                yMap = new int[side];
+                int index;
+                for (index = 0; index < side; index++) {
+                    int source =
+                            index * Wasm4Runtime.WIDTH / side;
+                    xMap[index] =
+                            (source >> 2)
+                                    | ((source & 3) << 8);
+                    yMap[index] =
+                            source
+                                    * (Wasm4Runtime.WIDTH >> 2);
+                }
             }
             int fullPixels = side * side;
             long fullBytes = (long) fullPixels * 4L;
@@ -727,7 +737,13 @@ final class W4Canvas extends GameCanvas implements Runnable, CommandListener {
             if (rowCount > rowsPerBand) {
                 rowCount = rowsPerBand;
             }
-            if (side == 240) {
+            if (side == Wasm4Runtime.WIDTH) {
+                runtime.copyNativeArgbBand(
+                        module,
+                        bandPixels,
+                        firstRow,
+                        rowCount);
+            } else if (side == 240) {
                 runtime.copyArgb240Band(
                         module,
                         bandPixels,
