@@ -49,11 +49,16 @@ final class ByteReader {
     }
 
     int readVarUInt32() throws WasmException {
-        long result = 0;
-        int shift = 0;
-        int count = 0;
+        require(1);
+        int value = data[position++] & 0xff;
+        if ((value & 0x80) == 0) {
+            return value;
+        }
+        long result = value & 0x7f;
+        int shift = 7;
+        int count = 1;
         while (true) {
-            int value = readU8();
+            value = readU8();
             result |= (long) (value & 0x7f) << shift;
             count++;
             if ((value & 0x80) == 0) {
@@ -79,11 +84,19 @@ final class ByteReader {
     }
 
     private long readVarInt(int bits) throws WasmException {
-        long result = 0;
-        int shift = 0;
+        require(1);
+        int value = data[position++] & 0xff;
+        if ((value & 0x80) == 0) {
+            long result = value & 0x7f;
+            if ((value & 0x40) != 0) {
+                result |= -1L << 7;
+            }
+            return result;
+        }
+        long result = value & 0x7f;
+        int shift = 7;
         int maxBytes = (bits + 6) / 7;
-        int count = 0;
-        int value;
+        int count = 1;
         while (true) {
             value = readU8();
             count++;
