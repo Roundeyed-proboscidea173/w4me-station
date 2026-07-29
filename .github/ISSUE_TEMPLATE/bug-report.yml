@@ -41,7 +41,7 @@ body:
     id: version
     attributes:
       label: W4ME Station version or commit
-      placeholder: 1.0.3
+      placeholder: 1.0.4
     validations:
       required: true
 

@@ -8,7 +8,7 @@ devices, including feature phones from the mid 2000s.
 <p>
   <a href="https://github.com/mulfyx/w4me-station/actions/workflows/ci.yml"><img src="https://github.com/mulfyx/w4me-station/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <img src="https://img.shields.io/badge/Java_ME-CLDC_1.1_%2F_MIDP_2.0-ED8B00" alt="Java ME: CLDC 1.1 / MIDP 2.0">
-  <img src="https://img.shields.io/badge/release-1.0.3-blue" alt="Release 1.0.3">
+  <img src="https://img.shields.io/badge/release-1.0.4-blue" alt="Release 1.0.4">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="MIT License"></a>
 </p>
 
@@ -24,12 +24,12 @@ below 300 KB.
 
 | Variant | Application | Descriptor |
 | --- | --- | --- |
-| Full, with optional JSR-75 file browsing | [w4me-station.jar](https://github.com/mulfyx/w4me-station/releases/download/v1.0.3/w4me-station.jar) | [w4me-station.jad](https://github.com/mulfyx/w4me-station/releases/download/v1.0.3/w4me-station.jad) |
-| Base, without JSR-75 classes or permissions | [w4me-station-base.jar](https://github.com/mulfyx/w4me-station/releases/download/v1.0.3/w4me-station-base.jar) | [w4me-station-base.jad](https://github.com/mulfyx/w4me-station/releases/download/v1.0.3/w4me-station-base.jad) |
+| Full, with optional JSR-75 file browsing | [w4me-station.jar](https://github.com/mulfyx/w4me-station/releases/download/v1.0.4/w4me-station.jar) | [w4me-station.jad](https://github.com/mulfyx/w4me-station/releases/download/v1.0.4/w4me-station.jad) |
+| Base, without JSR-75 classes or permissions | [w4me-station-base.jar](https://github.com/mulfyx/w4me-station/releases/download/v1.0.4/w4me-station-base.jar) | [w4me-station-base.jad](https://github.com/mulfyx/w4me-station/releases/download/v1.0.4/w4me-station-base.jad) |
 
-[Release notes](https://github.com/mulfyx/w4me-station/releases/tag/v1.0.3)
-and [SHA-256 checksums](https://github.com/mulfyx/w4me-station/releases/download/v1.0.3/SHA256SUMS)
-are stored beside the versioned `1.0.3` artifacts.
+[Release notes](https://github.com/mulfyx/w4me-station/releases/tag/v1.0.4)
+and [SHA-256 checksums](https://github.com/mulfyx/w4me-station/releases/download/v1.0.4/SHA256SUMS)
+are stored beside the versioned `1.0.4` artifacts.
 
 W4ME Station targets CLDC 1.1 / MIDP 2.0 devices. It is independent from and not
 endorsed by the WASM-4 maintainers.
@@ -72,7 +72,7 @@ Further `.wasm` files can be installed from the device.
 - global RMS-backed sound On/Off and master-volume controls;
 - deterministic host, KEmulator, and optional phoneME verification.
 
-The release version is `1.0.3`. The verified scope and remaining limitations
+The release version is `1.0.4`. The verified scope and remaining limitations
 are documented in [Compatibility](docs/compatibility.md).
 
 ## Requirements
@@ -167,7 +167,7 @@ receipts are written under `build/reports/`.
 
 - [Compatibility and limitations](docs/compatibility.md)
 - [Installing on a phone](docs/installation.md)
-- [1.0.3 release notes](CHANGELOG.md)
+- [1.0.4 release notes](CHANGELOG.md)
 - [Development and testing](docs/development.md)
 - [Performance methodology](docs/performance.md)
 - [Release checklist](docs/releasing.md)

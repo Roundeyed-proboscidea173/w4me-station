@@ -1,5 +1,61 @@
 # Changelog
 
+## 1.0.4 — 2026-07-29
+
+This release accelerates universal WASM-4 drawing paths and 240-pixel
+presentation without changing the cartridge format, controls, storage, or
+installation requirements.
+
+### Runtime graphics
+
+- converts aligned, opaque, untransformed 2bpp sprite bytes directly into
+  packed framebuffer bytes;
+- writes the common rotated 1bpp shape directly down framebuffer columns;
+- handles vertical spans and axis-aligned lines without a per-pixel Java
+  method call;
+- unpacks the fixed 160-to-240 nearest-neighbour scale in six-pixel groups
+  instead of performing generic map and packed-address work per destination
+  pixel.
+
+All fast paths are selected from standard WASM-4 drawing parameters. They do
+not identify or replace individual cartridges.
+
+### Performance
+
+The same corrected route harness was applied to `v1.0.3@8f39e93` and the 1.0.4
+runtime. Twelve balanced native i686 phoneME pairs per workload measured median
+headless frame-time reductions of 48.001% in Waternet, 8.785% in Untangle, and
+3.996% on the Duck Maze level-one route. Rubido remained effectively neutral
+at +0.303%.
+
+Game of Life was treated as a no-gain control. Its first combined run measured
+-0.691%, while an independent repeat measured -0.185% and the drawing-only
+combination measured -0.231%. These sub-percent results are not presented as
+either an acceleration or a confirmed regression.
+
+Separately, twelve balanced native phoneME component pairs measured a 61.870%
+reduction in 160-to-240 framebuffer conversion time with identical ARGB output.
+This component result excludes `drawRGB`, `flushGraphics`, scheduling, and
+physical display latency.
+
+The cartridge route measurements include WASM execution and synchronous host
+drawing imports, but exclude MIDP presentation and audio latency. They are not
+physical-device FPS figures.
+
+### Verification
+
+- keeps exact instruction counts, oracle checkpoints, memory, and final
+  framebuffer hashes across the real-cartridge corpus;
+- passes W4Bench, drawing geometry and overlap differentials, audio and storage
+  smokes, Java 1.3 compilation, CLDC 1.1 API checks, and preverification;
+- passes all 20 KEmulator functional scenarios, including the exact Waternet,
+  Untangle, Duck Maze, W4IR cache, JSR-75, audio, and recovery paths;
+- adds about 1 KB of permanent lookup storage and 1.2 KB to the full release
+  JAR.
+
+The canonical container now includes `diffutils`. Its counterless KEmulator
+probes no longer require production-disabled dispatch or compact counters.
+
 ## 1.0.3 — 2026-07-29
 
 This release improves the universal interpreter, corrects unsigned `i64`
