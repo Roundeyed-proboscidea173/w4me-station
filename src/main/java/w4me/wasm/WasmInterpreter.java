@@ -572,7 +572,7 @@ public final class WasmInterpreter {
         }
         while (pc < instructionCount) {
             if (compactEnds != null) {
-                int compactEnd = pc < compactEnds.length ? compactEnds[pc] : 0;
+                int compactEnd = compactEnds[pc];
                 if (compactEnd > pc) {
                     if (InterpreterBuildConfig.DIAGNOSTIC_COUNTERS) {
                         dispatchesExecuted++;

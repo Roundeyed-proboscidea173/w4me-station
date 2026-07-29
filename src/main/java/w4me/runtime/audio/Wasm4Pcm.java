@@ -69,17 +69,23 @@ public final class Wasm4Pcm {
         }
         double phase = 0.0;
         int noise = 0x7fff ^ (frequency & 0x7fff);
+        int lastElapsedFrame = -1;
+        int currentVolume = 0;
         int sample;
         for (sample = 0; sample < sampleCount; sample++) {
             int elapsedFrame = sample * 60 / SAMPLE_RATE;
-            int currentVolume = envelopeVolume(
-                    elapsedFrame,
-                    attack,
-                    decay,
-                    sustain,
-                    release,
-                    sustainVolume,
-                    peakVolume);
+            if (elapsedFrame != lastElapsedFrame) {
+                currentVolume =
+                        envelopeVolume(
+                                elapsedFrame,
+                                attack,
+                                decay,
+                                sustain,
+                                release,
+                                sustainVolume,
+                                peakVolume);
+                lastElapsedFrame = elapsedFrame;
+            }
             int currentFrequency = startFrequency
                     + (int) ((long) (endFrequency - startFrequency) * sample / sampleCount);
             double wave;

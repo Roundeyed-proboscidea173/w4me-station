@@ -1,7 +1,5 @@
 package w4me.wasm;
 
-import java.util.Vector;
-
 public final class WasmModule {
     public static final int W4IR_FORMAT_VERSION =
             OpcodeBuildConfig.DENSE_OPCODE_DISPATCH ? 16 : 14;
@@ -133,12 +131,12 @@ public final class WasmModule {
     long cartridgeFingerprint;
     int cartridgeLength;
 
-    private final Vector importList = new Vector();
-    private final Vector definedFunctionTypes = new Vector();
-    private final Vector functionBodies = new Vector();
-    private final Vector globalList = new Vector();
-    private final Vector exportList = new Vector();
-    private final Vector passiveDataUses = new Vector();
+    private final ObjectList importList = new ObjectList();
+    private final ObjectList definedFunctionTypes = new ObjectList();
+    private final ObjectList functionBodies = new ObjectList();
+    private final ObjectList globalList = new ObjectList();
+    private final ObjectList exportList = new ObjectList();
+    private final ObjectList passiveDataUses = new ObjectList();
 
     private WasmModule() {}
 
@@ -738,8 +736,8 @@ public final class WasmModule {
             int localCount,
             FuncType functionType)
             throws WasmException {
-        Vector code = new Vector();
-        Vector openBlocks = new Vector();
+        ObjectList code = new ObjectList();
+        ObjectList openBlocks = new ObjectList();
         ValidationState validation = new ValidationState(functionType.results);
         boolean complete = false;
         int totalFunctions = importList.size() + definedFunctionTypes.size();
@@ -3196,6 +3194,46 @@ public final class WasmModule {
             code[codeOffset] = 0x01;
             code[codeOffset + 1] = 0;
             code[codeOffset + 2] = 0;
+        }
+    }
+
+    private static final class ObjectList {
+        private Object[] values = new Object[8];
+        private int size;
+
+        void addElement(Object value) {
+            if (size == values.length) {
+                Object[] grown = new Object[values.length << 1];
+                System.arraycopy(values, 0, grown, 0, size);
+                values = grown;
+            }
+            values[size++] = value;
+        }
+
+        Object elementAt(int index) {
+            if (index < 0 || index >= size) {
+                throw new ArrayIndexOutOfBoundsException(index);
+            }
+            return values[index];
+        }
+
+        void removeElementAt(int index) {
+            if (index < 0 || index >= size) {
+                throw new ArrayIndexOutOfBoundsException(index);
+            }
+            int moved = size - index - 1;
+            if (moved > 0) {
+                System.arraycopy(values, index + 1, values, index, moved);
+            }
+            values[--size] = null;
+        }
+
+        void copyInto(Object[] target) {
+            System.arraycopy(values, 0, target, 0, size);
+        }
+
+        int size() {
+            return size;
         }
     }
 
