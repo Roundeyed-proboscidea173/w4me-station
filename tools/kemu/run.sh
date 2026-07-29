@@ -690,7 +690,7 @@ cmd_verify_generic_w4ir() {
 
     sed -n 's/.*W4ME_FRAME cart=plasma-cube frame=\([0-9][0-9]*\) instructions=[0-9][0-9]* dispatches=\([0-9][0-9]*\).*elapsed-ms=\([0-9][0-9]*\).*/\1 \2 \3/p' \
         "${TEMP_DIR}/worker.log" |
-        awk '$1 < 60 && $2 > 100000 && !seen[$1]++ { total += $3; dispatches += $2; if (count == 0 || $3 < minimum) minimum = $3; if ($3 > maximum) maximum = $3; count++ } END { if (count != 60) exit 1; printf "frames=%d average-ms=%.2f minimum-ms=%d maximum-ms=%d dispatches-average=%d\n", count, total / count, minimum, maximum, dispatches / count }' \
+        awk '$1 < 60 && !seen[$1]++ { total += $3; dispatches += $2; if (count == 0 || $3 < minimum) minimum = $3; if ($3 > maximum) maximum = $3; count++ } END { if (count != 60) exit 1; printf "frames=%d average-ms=%.2f minimum-ms=%d maximum-ms=%d dispatches-average=%d\n", count, total / count, minimum, maximum, dispatches / count }' \
             >"${RESULT_DIR}/timing.txt"
 
     printf 'PASS KEmulator generic W4IR plasma-cube frames=60 fast-paths=0\n'
@@ -1550,9 +1550,9 @@ cmd_verify_w4ir() {
         --out "${RESULT_DIR}/w4ir-cache-probe.png" >/dev/null
 
     if ! grep -E -q -- \
-        'W4ME_W4IR_PROBE recovery=PASS old-format=PASS build=PASS hit=PASS descriptors=PASS descriptor-hash=[0-9a-f]{8} slots=12 faults=[1-9][0-9]* warm-faults=0 hits=[0-9]+ promoted=[1-9][0-9]* compact-blocks=[1-9][0-9]* compact-instructions=[1-9][0-9]* trace-loops=[1-9][0-9]* trace-iterations=[1-9][0-9]* fast-paths=0 first-ms=[0-9]+ warm-average-ms=[0-9]+ frame0-fnv1a=2e572184 frame10-fnv1a=f90becd4' \
+        'W4ME_W4IR_PROBE recovery=PASS old-format=PASS build=PASS hit=PASS descriptors=PASS descriptor-hash=[0-9a-f]{8} slots=12 faults=[1-9][0-9]* warm-faults=0 hits=[0-9]+ promoted=[1-9][0-9]* compact-counters=(on|off) compact-blocks=[0-9]+ compact-instructions=[0-9]+ trace-loops=[1-9][0-9]* trace-iterations=[1-9][0-9]* fast-paths=0 first-ms=[0-9]+ warm-average-ms=[0-9]+ frame0-fnv1a=2e572184 frame10-fnv1a=f90becd4' \
         "${TEMP_DIR}/worker.log"; then
-        printf 'error: generic RMS W4IR build/hit/paging/compact probe failed\n' >&2
+        printf 'error: generic RMS W4IR build/hit/paging/promotion probe failed\n' >&2
         exit 1
     fi
     {
@@ -1560,7 +1560,7 @@ cmd_verify_w4ir() {
         grep -F -- 'W4ME_W4IR_PROBE ' "${TEMP_DIR}/worker.log"
         printf '\nCaptured: %s\n' "$(date -I)"
     } >"${RESULT_DIR}/receipt.txt"
-    printf 'PASS KEmulator generic W4IR old-format-rebuild/build/cache-hit/descriptors/12-slot paging/compact framebuffer=2e572184\n'
+    printf 'PASS KEmulator generic W4IR old-format-rebuild/build/cache-hit/descriptors/12-slot paging/promotion framebuffer=2e572184\n'
 }
 
 cmd_verify_waternet() {

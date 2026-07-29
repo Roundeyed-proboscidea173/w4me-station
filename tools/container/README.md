@@ -76,7 +76,7 @@ docker rm -f w4me-station-kemu
 | CLDC/MIDP API lint | MicroEmulator `cldcapi11:2.0.4` and `midpapi20:2.0.4` LGPL build-time stubs, checksum-pinned |
 | KEmulator | `mulfyx/KEmulator` commit `73ba4b14b8c2` in `/opt/kemu` |
 | WABT | Fedora 44 package (`wasm2wat`, `wasm-objdump`, `wasm-validate`) |
-| Python, binutils, ShellCheck, shfmt | Fedora 44 packages |
+| Python, binutils, diffutils, ShellCheck, shfmt | Fedora 44 packages |
 
 Fedora 44 delegates standard image decoding away from the legacy GDK Pixbuf
 module interface used by KEmulator's SWT build. The container includes the

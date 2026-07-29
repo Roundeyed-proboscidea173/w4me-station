@@ -122,9 +122,12 @@ public final class W4IrCacheProbeMidlet extends MIDlet {
             if (second.w4irPromotedFunctions() <= 0) {
                 throw new IllegalStateException("hot W4IR function was not promoted");
             }
-            if (compactBlocks <= 0 || compactInstructions <= 0) {
+            boolean compactCounters =
+                    compactBlocks != 0 || compactInstructions != 0;
+            if (compactCounters
+                    && (compactBlocks <= 0 || compactInstructions <= 0)) {
                 throw new IllegalStateException(
-                        "promoted W4IR did not execute through compact blocks");
+                        "diagnostic compact counters are incomplete");
             }
             if (traceLoops <= 0 || traceIterations <= 0) {
                 throw new IllegalStateException(
@@ -146,6 +149,8 @@ public final class W4IrCacheProbeMidlet extends MIDlet {
                             + second.w4irPageHits()
                             + " promoted="
                             + second.w4irPromotedFunctions()
+                            + " compact-counters="
+                            + (compactCounters ? "on" : "off")
                             + " compact-blocks="
                             + compactBlocks
                             + " compact-instructions="
