@@ -128,9 +128,6 @@ public final class WasmModule {
     private int declaredDataCount = -1;
     private int parsedDataCount = -1;
     private boolean[] dataSegmentPassive;
-    long cartridgeFingerprint;
-    int cartridgeLength;
-
     private final ObjectList importList = new ObjectList();
     private final ObjectList definedFunctionTypes = new ObjectList();
     private final ObjectList functionBodies = new ObjectList();
@@ -167,8 +164,6 @@ public final class WasmModule {
             throw new WasmException("cartridge exceeds the WASM-4 64 KiB limit");
         }
         WasmModule module = new WasmModule();
-        module.cartridgeFingerprint = fingerprintCartridge(bytes);
-        module.cartridgeLength = bytes.length;
         module.w4irStore = w4irStore;
         module.extendedFusionsEnabled = extendedFusionsEnabled;
         module.loadTeeFusionsEnabled = loadTeeFusionsEnabled;
@@ -253,16 +248,6 @@ public final class WasmModule {
         }
         FunctionBody body = functions[functionIndex];
         return body == null ? 0 : body.fingerprint;
-    }
-
-    private static long fingerprintCartridge(byte[] bytes) {
-        long hash = 0xcbf29ce484222325L;
-        int index;
-        for (index = 0; index < bytes.length; index++) {
-            hash ^= bytes[index] & 0xff;
-            hash *= 0x100000001b3L;
-        }
-        return hash;
     }
 
     static int executionOpcode(int originalOpcode) {

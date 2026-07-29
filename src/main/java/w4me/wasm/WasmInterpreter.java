@@ -2561,14 +2561,11 @@ public final class WasmInterpreter {
             int auxiliary = code[offset + 2];
             // Standard tokens have span one; fused handlers return their fixed span.
             int span = 1;
-            boolean loadTeeFusion =
-                    opcode
-                            == WasmModule.W4IR_I32_LOAD_LOCAL_TEE
-                                    + WasmModule.W4IR_EXECUTION_OFFSET;
             boolean accountAfterHandler =
                     opcode >= WasmModule.EXECUTION_W4IR_FIRST
-                            && opcode <= WasmModule.EXECUTION_W4IR_LAST
-                            && !loadTeeFusion;
+                            && opcode
+                                    < WasmModule.W4IR_I32_LOAD_LOCAL_TEE
+                                            + WasmModule.W4IR_EXECUTION_OFFSET;
             if (!accountAfterHandler) {
                 instructionsExecuted++;
                 if (InterpreterBuildConfig.DIAGNOSTIC_COUNTERS) {
