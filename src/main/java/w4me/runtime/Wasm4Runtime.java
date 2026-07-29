@@ -31,6 +31,11 @@ public final class Wasm4Runtime implements WasmHost {
     private final int[] palette = new int[4];
     private final int[] argbLookup = new int[1024];
     private final Wasm4Apu apu;
+    // Cached mapping for the common opaque, untransformed 2bpp blit shape.
+    // Each source byte contains four MSB-first sprite pixels; each lookup value
+    // is one LSB-first WASM-4 framebuffer byte.
+    private final int[] opaque2bppBlitLookup = new int[256];
+    private int opaque2bppBlitColors = -1;
     private final DiskBackend disk;
     private String lastTrace;
 
@@ -561,6 +566,44 @@ public final class Wasm4Runtime implements WasmHost {
         }
     }
 
+    /** Resolution-selected nearest-neighbour 160 to 240 conversion. */
+    public void copyArgb240Band(
+            WasmModule module,
+            int[] pixels,
+            int[] yMap,
+            int firstRow,
+            int rowCount) {
+        if (rowCount < 0
+                || firstRow < 0
+                || rowCount > yMap.length - firstRow
+                || pixels.length < 240 * rowCount) {
+            throw new IllegalArgumentException("invalid 240-pixel ARGB band geometry");
+        }
+        byte[] memory = module.memory();
+        int[] lookup = argbLookup;
+        int row;
+        for (row = 0; row < rowCount; row++) {
+            int sourceRow = yMap[firstRow + row];
+            int destination = row * 240;
+            if (row > 0 && sourceRow == yMap[firstRow + row - 1]) {
+                System.arraycopy(pixels, destination - 240, pixels, destination, 240);
+            } else {
+                int packedAddress;
+                for (packedAddress = 0; packedAddress < 40; packedAddress++) {
+                    int source =
+                            (memory[FRAMEBUFFER + sourceRow + packedAddress] & 0xff) << 2;
+                    pixels[destination] = lookup[source];
+                    pixels[destination + 1] = lookup[source];
+                    pixels[destination + 2] = lookup[source + 1];
+                    pixels[destination + 3] = lookup[source + 2];
+                    pixels[destination + 4] = lookup[source + 2];
+                    pixels[destination + 5] = lookup[source + 3];
+                    destination += 6;
+                }
+            }
+        }
+    }
+
     private void textUtf8(byte[] memory, int pointer, int byteLength, int x, int y) {
         checkRange(memory, pointer, byteLength);
         int currentX = x;
@@ -645,14 +688,10 @@ public final class Wasm4Runtime implements WasmHost {
         }
         int strokeColor = (stroke - 1) & 3;
         if (x >= 0 && x < WIDTH) {
-            for (current = startY; current < endY; current++) {
-                drawPoint(memory, strokeColor, x, current);
-            }
+            drawVertical(memory, strokeColor, x, startY, endY);
         }
         if (endXUnclamped > 0 && endXUnclamped <= WIDTH) {
-            for (current = startY; current < endY; current++) {
-                drawPoint(memory, strokeColor, (int) endXUnclamped - 1, current);
-            }
+            drawVertical(memory, strokeColor, (int) endXUnclamped - 1, startY, endY);
         }
         if (y >= 0 && y < HEIGHT) {
             drawHorizontal(memory, strokeColor, startX, y, endX);
@@ -686,10 +725,7 @@ public final class Wasm4Runtime implements WasmHost {
         int startY = clampToScreen(y, HEIGHT);
         int endY = clampToScreen((long) y + length, HEIGHT);
         int color = (drawColor - 1) & 3;
-        int currentY;
-        for (currentY = startY; currentY < endY; currentY++) {
-            drawPoint(memory, color, x, currentY);
-        }
+        drawVertical(memory, color, x, startY, endY);
     }
 
     private void line(byte[] memory, int x1, int y1, int x2, int y2) {
@@ -709,6 +745,20 @@ public final class Wasm4Runtime implements WasmHost {
             throw new WasmTrap("line geometry exceeds runtime step limit " + LINE_STEP_LIMIT);
         }
         int color = (drawColor - 1) & 3;
+        if (y1 == y2) {
+            int startX = x1 < x2 ? x1 : x2;
+            int endX = (x1 < x2 ? x2 : x1) + 1;
+            drawHorizontalUnclipped(memory, color, startX, y1, endX);
+            return;
+        }
+        if (x1 == x2) {
+            int startY = y1 < y2 ? y1 : y2;
+            int endY = (y1 < y2 ? y2 : y1) + 1;
+            if (startY < 0) startY = 0;
+            if (endY > HEIGHT) endY = HEIGHT;
+            if (startY < endY) drawVertical(memory, color, x1, startY, endY);
+            return;
+        }
         if (y1 > y2) {
             int swap = x1;
             x1 = x2;
@@ -848,7 +898,8 @@ public final class Wasm4Runtime implements WasmHost {
         if (lastPixel < 0 || bitLength > ((long) memory.length << 3)) {
             throw new WasmTrap("blit source is too large");
         }
-        checkRange(memory, pointer, (int) ((bitLength + 7) >> 3));
+        int sourceByteLength = (int) ((bitLength + 7) >> 3);
+        checkRange(memory, pointer, sourceByteLength);
 
         if (rotate) {
             flipX = !flipX;
@@ -861,7 +912,59 @@ public final class Wasm4Runtime implements WasmHost {
         int clipYMaximum = clampToRange(WIDTH - clipYOrigin, height);
         int colors = readU16(memory, DRAW_COLORS);
 
+        if ((flags & 15) == 8) {
+            int yIndex;
+            for (yIndex = clipYMinimum; yIndex < clipYMaximum; yIndex++) {
+                int targetX = destinationX + yIndex;
+                int targetY = destinationY + clipXMinimum;
+                int framebufferAddress =
+                        FRAMEBUFFER + ((WIDTH * targetY + targetX) >> 2);
+                int framebufferShift = (targetX & 3) << 1;
+                int framebufferMask = 3 << framebufferShift;
+                int bitIndex =
+                        (sourceY + yIndex) * sourceStride
+                                + sourceX
+                                + width
+                                - clipXMinimum
+                                - 1;
+                int xIndex;
+                for (xIndex = clipXMinimum;
+                        xIndex < clipXMaximum;
+                        xIndex++) {
+                    int packed = memory[pointer + (bitIndex >> 3)] & 0xff;
+                    int colorIndex = (packed >> (7 - (bitIndex & 7))) & 1;
+                    int drawColor = (colors >> (colorIndex << 2)) & 0x0f;
+                    if (drawColor != 0) {
+                        memory[framebufferAddress] =
+                                (byte)
+                                        ((((drawColor - 1) & 3)
+                                                        << framebufferShift)
+                                                | ((memory[framebufferAddress]
+                                                                        & 0xff)
+                                                        & ~framebufferMask));
+                    }
+                    framebufferAddress += WIDTH >> 2;
+                    bitIndex--;
+                }
+            }
+            return;
+        }
+
         if ((flags & 14) == 0) {
+            boolean opaque2bpp =
+                    twoBitsPerPixel
+                            && (colors & 0x000f) != 0
+                            && (colors & 0x00f0) != 0
+                            && (colors & 0x0f00) != 0
+                            && (colors & 0xf000) != 0;
+            // Sprite data is allowed to overlap the framebuffer. Preserve the
+            // scalar read/write order whenever that is possible.
+            boolean sourceOutsideFramebuffer =
+                    pointer + sourceByteLength <= FRAMEBUFFER
+                            || pointer >= FRAMEBUFFER + FRAMEBUFFER_SIZE;
+            if (opaque2bpp && sourceOutsideFramebuffer) {
+                prepareOpaque2bppBlitLookup(colors);
+            }
             int plainY;
             for (plainY = clipYMinimum; plainY < clipYMaximum; plainY++) {
                 int targetX = destinationX + clipXMinimum;
@@ -874,10 +977,22 @@ public final class Wasm4Runtime implements WasmHost {
                         FRAMEBUFFER
                                 + ((WIDTH * targetY + targetX) >> 2);
                 int framebufferShift = (targetX & 3) << 1;
-                int plainX;
-                for (plainX = clipXMinimum;
-                        plainX < clipXMaximum;
-                        plainX++) {
+                int plainX = clipXMinimum;
+                if (opaque2bpp
+                        && sourceOutsideFramebuffer
+                        && framebufferShift == 0
+                        && (bitIndex & 3) == 0) {
+                    int packedEnd = clipXMaximum - 3;
+                    while (plainX < packedEnd) {
+                        int packed = memory[pointer + (bitIndex >> 2)] & 0xff;
+                        memory[framebufferAddress] =
+                                (byte) opaque2bppBlitLookup[packed];
+                        framebufferAddress++;
+                        bitIndex += 4;
+                        plainX += 4;
+                    }
+                }
+                for (; plainX < clipXMaximum; plainX++) {
                     int colorIndex;
                     if (twoBitsPerPixel) {
                         int packed = memory[pointer + (bitIndex >> 2)] & 0xff;
@@ -931,6 +1046,41 @@ public final class Wasm4Runtime implements WasmHost {
                     drawPoint(memory, (drawColor - 1) & 3, targetX, targetY);
                 }
             }
+        }
+    }
+
+    private void prepareOpaque2bppBlitLookup(int colors) {
+        if (opaque2bppBlitColors == colors) {
+            return;
+        }
+        int mappedColors =
+                (((colors & 0x000f) - 1) & 3)
+                        | (((((colors >>> 4) & 0x0f) - 1) & 3) << 2)
+                        | (((((colors >>> 8) & 0x0f) - 1) & 3) << 4)
+                        | (((((colors >>> 12) & 0x0f) - 1) & 3) << 6);
+        int packed;
+        for (packed = 0; packed < 256; packed++) {
+            opaque2bppBlitLookup[packed] =
+                    ((mappedColors >>> (((packed >>> 6) & 3) << 1)) & 3)
+                            | (((mappedColors >>> (((packed >>> 4) & 3) << 1)) & 3) << 2)
+                            | (((mappedColors >>> (((packed >>> 2) & 3) << 1)) & 3) << 4)
+                            | (((mappedColors >>> ((packed & 3) << 1)) & 3) << 6);
+        }
+        opaque2bppBlitColors = colors;
+    }
+
+    private void drawVertical(
+            byte[] memory, int color, int x, int startY, int endY) {
+        if (startY >= endY) return;
+        int address = FRAMEBUFFER + ((WIDTH * startY + x) >> 2);
+        int shift = (x & 3) << 1;
+        int mask = 3 << shift;
+        int packedColor = color << shift;
+        int row;
+        for (row = startY; row < endY; row++) {
+            memory[address] =
+                    (byte) (packedColor | ((memory[address] & 0xff) & ~mask));
+            address += WIDTH >> 2;
         }
     }
 

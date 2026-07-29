@@ -727,7 +727,14 @@ final class W4Canvas extends GameCanvas implements Runnable, CommandListener {
             if (rowCount > rowsPerBand) {
                 rowCount = rowsPerBand;
             }
-            if (side > Wasm4Runtime.WIDTH) {
+            if (side == 240) {
+                runtime.copyArgb240Band(
+                        module,
+                        bandPixels,
+                        yMap,
+                        firstRow,
+                        rowCount);
+            } else if (side > Wasm4Runtime.WIDTH) {
                 runtime.copyUpscaledArgbBand(
                         module,
                         bandPixels,
